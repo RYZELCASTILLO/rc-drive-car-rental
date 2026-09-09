@@ -1,3 +1,4 @@
+@"
 # IDE / Editor files
 .vscode/
 .idea/
@@ -8,13 +9,14 @@
 # OS files
 .DS_Store
 Thumbs.db
+desktop.ini
 
 # PHP error logs
 *.log
 error_log
 
 # Database configuration (if you have sensitive info)
-# config.php  # ONLY uncomment if you need to exclude config
+# config.php
 
 # Temporary files
 *.tmp
@@ -28,5 +30,6 @@ error_log
 vendor/
 composer.lock
 
-# Node modules (if any)
+# Node modules
 node_modules/
+"@ | Out-File -FilePath .\.gitignore -Encoding utf8
