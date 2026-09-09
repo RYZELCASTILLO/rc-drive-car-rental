@@ -1,0 +1,32 @@
+# IDE / Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# PHP error logs
+*.log
+error_log
+
+# Database configuration (if you have sensitive info)
+# config.php  # ONLY uncomment if you need to exclude config
+
+# Temporary files
+*.tmp
+*.temp
+
+# Backup files
+*.bak
+*.backup
+
+# Composer
+vendor/
+composer.lock
+
+# Node modules (if any)
+node_modules/
