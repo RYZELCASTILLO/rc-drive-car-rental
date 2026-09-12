@@ -1,53 +1,29 @@
-@"
 # RC Drive - Car Rental System
 
-A comprehensive car rental management system built with PHP, MySQL, and Bootstrap.
+A PHP/MySQL car rental management system with admin and customer roles.
 
 ## Features
+- Customer registration, login, and password hashing (bcrypt)
+- Browse fleet, filter by type (Sedan / SUV / Sports)
+- Book a vehicle with driver's license and payment method
+- Real-time availability per brand (20 Sedans / 20 SUVs / 2 Sports)
+- Server-side overbooking protection
+- 7-day maximum rental limit
+- Admin dashboard: approve / reject, statistics, per-brand stock
+- Two-way inquiry conversation system
+- Secure PDO queries with prepared statements
 
-- **User Authentication**: Secure login and registration with password hashing
-- **Admin Dashboard**: Manage rentals, approve/reject bookings, view inquiries
-- **Vehicle Booking**: Browse fleet, select dates, calculate costs
-- **Customer Portal**: View booking history and status
-- **Inquiry System**: Send and manage customer inquiries
-- **Responsive Design**: Mobile-friendly interface with dark theme
+## Requirements
+- PHP 8+
+- MySQL / MariaDB
+- Apache (XAMPP recommended)
 
-## Technologies Used
+## Setup
+1. Clone this repo into `htdocs/`
+2. Create database `rc_drive` and import the SQL schema
+3. Update credentials in `config.php` if needed
+4. Visit `http://localhost/rc_drive/`
 
-- PHP 7.4+
-- MySQL 5.7+
-- Bootstrap 5.3
-- JavaScript (Vanilla)
-- HTML5 & CSS3
-- PDO for database interactions
-
-## Installation
-
-1. Clone the repository
-2. Import the database schema (rc_drive.sql)
-3. Configure database connection in config.php
-4. Start your XAMPP/WAMP/LAMP server
-5. Access at http://localhost/demo
-
-## Database Schema
-
-- `users`: User accounts (id, username, email, password, role)
-- `rentals`: Booking records (id, user_id, vehicle_id, dates, total_fee, status)
-- `vehicles`: Car inventory (id, vehicle_name, price_per_day, availability)
-- `inquiries`: Customer messages (id, name, email, message, created_at)
-
-## Security Features
-
-- Password hashing with `password_hash()`
-- PDO prepared statements to prevent SQL injection
-- Session-based authentication
-- Input validation and sanitization
-
-## Author
-
-RYZEL CASTILLO
-
-## Course
-
-Web Development 1 - Midterm Project
-"@ | Out-File -FilePath .\README.md -Encoding utf8
+## Default Admin
+Username: `admin`
+Password: `Admin@123` *(change this after first login)*
