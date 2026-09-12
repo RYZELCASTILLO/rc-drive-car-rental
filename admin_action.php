@@ -37,7 +37,6 @@ try {
         ':id'     => $id
     ]);
 
-    /* Recalculate stock for that vehicle */
     if (!empty($booking['vehicle_id'])) {
         syncVehicleStock($pdo, (int)$booking['vehicle_id']);
     }

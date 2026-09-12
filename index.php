@@ -4,6 +4,19 @@ require_once 'config.php';
 
 /*
 |--------------------------------------------------------------------------
+| ADMIN REDIRECT
+|--------------------------------------------------------------------------
+| If a logged-in ADMIN visits the customer homepage, send them to their
+| dashboard. Customers are NOT affected and can browse freely.
+*/
+
+if (isset($_SESSION['user_id']) && ($_SESSION['role'] ?? '') === 'admin') {
+    header("Location: dashboard.php");
+    exit;
+}
+
+/*
+|--------------------------------------------------------------------------
 | SESSION USER DATA FOR JAVASCRIPT
 |--------------------------------------------------------------------------
 */
@@ -235,8 +248,8 @@ if (isset($_SESSION['user_id'])) {
 
         <?php if (isset($_SESSION['username'])): ?>
 
-            <span class="badge <?= ($_SESSION['role'] ?? '') === 'admin' ? 'bg-danger' : 'bg-info' ?> me-1">
-                <?= ($_SESSION['role'] ?? '') === 'admin' ? 'ADMIN' : 'CUSTOMER' ?>
+            <span class="badge bg-info me-1">
+                CUSTOMER
             </span>
 
             <a
@@ -1548,7 +1561,6 @@ if (isset($_SESSION['user_id'])) {
                                 Return Date
                             </label>
 
-
                             <input
                                 type="date"
                                 name="return_date"
@@ -2170,6 +2182,12 @@ if (isset($_SESSION['user_id'])) {
 
             <a href="#">
                 Terms of Service
+            </a>
+
+            |
+
+            <a href="admin_login.php">
+                Admin Portal
             </a>
 
         </div>

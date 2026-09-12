@@ -40,11 +40,22 @@ try {
     $vehicleId  = (int) $vehicle['id'];
     $totalUnits = (int) $vehicle['total_units'];
 
+    $countStmt = $pdo->prepare("
+        SELECT COUNT(*) AS cnt
+        FROM rentals
+        WHERE vehicle_id = :vid
+        AND status = 'Approved'
+    ");
+    $countStmt->execute([':vid' => $vehicleId]);
+    $bookedTotal = (int) $countStmt->fetchColumn();
+
+    $currentlyAvailable = max(0, $totalUnits - $bookedTotal);
+
     $bookingsStmt = $pdo->prepare("
         SELECT rental_date, return_date
         FROM rentals
         WHERE vehicle_id = :vehicle_id
-        AND status IN ('Pending', 'Approved')
+        AND status = 'Approved'
         AND return_date >= CURDATE()
         ORDER BY rental_date ASC
     ");
@@ -78,11 +89,6 @@ try {
             $unavailableDates[] = $date;
         }
     }
-
-    $today         = new DateTime('today');
-    $todayKey      = $today->format('Y-m-d');
-    $currentlyBooked    = $bookedCountByDate[$todayKey] ?? 0;
-    $currentlyAvailable = max(0, $totalUnits - $currentlyBooked);
 
     echo json_encode([
         'success'             => true,

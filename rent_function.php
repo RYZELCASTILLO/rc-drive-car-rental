@@ -158,15 +158,13 @@ try {
         exit;
     }
 
-    /* =========================================================
-       CHECK TOTAL AVAILABLE UNITS
-    ========================================================= */
+    /* Check total available units — only Approved bookings count */
 
     $countStmt = $pdo->prepare("
         SELECT COUNT(*) AS cnt
         FROM rentals
         WHERE vehicle_id = :vid
-        AND status IN ('Pending', 'Approved')
+        AND status = 'Approved'
     ");
     $countStmt->execute([':vid' => $vehicleId]);
     $bookedTotal = (int) $countStmt->fetchColumn();
@@ -174,14 +172,12 @@ try {
     if ($bookedTotal >= $totalUnits) {
         header(
             "Location: index.php?status=error&message=" .
-            urlencode("Sorry, all $totalUnits unit(s) of $vehicleName have no available units right now. Please choose a different vehicle or try again later.")
+            urlencode("Sorry, all $totalUnits unit(s) of $vehicleName are currently rented. Please choose a different vehicle or try again later.")
         );
         exit;
     }
 
-    /* =========================================================
-       PER-DATE OVERBOOKING CHECK
-    ========================================================= */
+    /* Per-date overbooking check — only Approved bookings block dates */
 
     $requestedStart = new DateTime($rentalDate);
     $requestedEnd   = new DateTime($returnDate);
@@ -198,7 +194,7 @@ try {
         SELECT rental_date, return_date
         FROM rentals
         WHERE vehicle_id = :vehicle_id
-        AND status IN ('Pending', 'Approved')
+        AND status = 'Approved'
         AND rental_date <= :return_date
         AND return_date >= :rental_date
     ");
@@ -241,9 +237,7 @@ try {
         }
     }
 
-    /* =========================================================
-       SAVE BOOKING
-    ========================================================= */
+    /* Save booking as Pending — stock does NOT change yet */
 
     $totalFee = $dailyRate * $days;
 
@@ -268,8 +262,6 @@ try {
         ':payment_method' => $paymentMethod,
         ':total_fee'      => $totalFee
     ]);
-
-    syncVehicleStock($pdo, $vehicleId);
 
     header(
         "Location: index.php?status=success&message=" .

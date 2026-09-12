@@ -976,12 +976,27 @@ foreach ($userRentals as $r) {
 
             </span>
 
-            <a href="index.php" class="dash-btn dash-btn-outline">
+           <?php if ($role === 'admin'): ?>
 
-                <i class="fa-solid fa-house"></i>
-                Home
+    <a href="dashboard.php" class="dash-btn dash-btn-outline">
 
-            </a>
+        <i class="fa-solid fa-rotate"></i>
+        Refresh
+
+    </a>
+
+<?php else: ?>
+
+    <a href="index.php" class="dash-btn dash-btn-outline">
+
+        <i class="fa-solid fa-house"></i>
+        Home
+
+    </a>
+
+<?php endif; ?>
+
+            
 
             <a href="logout.php" class="dash-btn dash-btn-danger">
 

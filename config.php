@@ -4,15 +4,7 @@
    BOOKING RULES
    ========================================================================= */
 
-/**
- * Maximum number of rental days allowed per booking.
- * Change this number to adjust the limit.
- */
 define('MAX_RENTAL_DAYS', 7);
-
-/**
- * Minimum number of rental days allowed per booking.
- */
 define('MIN_RENTAL_DAYS', 1);
 
 
@@ -54,12 +46,9 @@ function getConnection()
 
 /* =========================================================================
    VEHICLE STOCK HELPERS
+   Only APPROVED bookings reduce availability.
    ========================================================================= */
 
-/**
- * Recalculate available_units for one vehicle.
- * Counts every Pending + Approved booking for that vehicle.
- */
 function syncVehicleStock(PDO $pdo, int $vehicleId): void
 {
     $v = $pdo->prepare("SELECT total_units FROM vehicles WHERE id = :id LIMIT 1");
@@ -76,7 +65,7 @@ function syncVehicleStock(PDO $pdo, int $vehicleId): void
         SELECT COUNT(*) AS cnt
         FROM rentals
         WHERE vehicle_id = :vid
-        AND status IN ('Pending', 'Approved')
+        AND status = 'Approved'
     ");
     $countStmt->execute([':vid' => $vehicleId]);
     $booked = (int) $countStmt->fetchColumn();
@@ -95,9 +84,6 @@ function syncVehicleStock(PDO $pdo, int $vehicleId): void
 }
 
 
-/**
- * Recalculate available_units for every vehicle.
- */
 function syncAllVehicleStock(PDO $pdo): void
 {
     $ids = $pdo->query("SELECT id FROM vehicles")->fetchAll(PDO::FETCH_COLUMN);
