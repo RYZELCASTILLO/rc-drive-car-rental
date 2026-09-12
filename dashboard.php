@@ -287,25 +287,9 @@ foreach ($userRentals as $r) {
         }
 
         .dash-logo img {
-            height: 46px;
+            height: 55px;
             width: auto;
-        }
-
-        .dash-logo-text h1 {
-            font-size: 1.4rem;
-            font-weight: 900;
-            color: #FCC113;
-            margin: 0;
-            letter-spacing: 0.5px;
-        }
-
-        .dash-logo-text span {
             display: block;
-            font-size: 0.75rem;
-            color: #a0a5b1;
-            letter-spacing: 2px;
-            font-weight: 700;
-            text-transform: uppercase;
         }
 
         .dash-header-actions {
@@ -981,11 +965,6 @@ foreach ($userRentals as $r) {
         <div class="dash-logo">
 
             <img src="images/Asset 1.png" alt="RC Drive Logo">
-
-            <div class="dash-logo-text">
-                <h1>RC DRIVE</h1>
-                <span>Car Rental Services</span>
-            </div>
 
         </div>
 
