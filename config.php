@@ -1,5 +1,21 @@
 <?php
 
+/* =========================================================================
+   BOOKING RULES
+   ========================================================================= */
+
+/**
+ * Maximum number of rental days allowed per booking.
+ * Change this number to adjust the limit.
+ */
+define('MAX_RENTAL_DAYS', 7);
+
+/**
+ * Minimum number of rental days allowed per booking.
+ */
+define('MIN_RENTAL_DAYS', 1);
+
+
 function getConnection()
 {
     $host = "localhost";
@@ -32,5 +48,60 @@ function getConnection()
         error_log($e->getMessage());
 
         die("Database connection failed. Please contact the administrator.");
+    }
+}
+
+
+/* =========================================================================
+   VEHICLE STOCK HELPERS
+   ========================================================================= */
+
+/**
+ * Recalculate available_units for one vehicle.
+ * Counts every Pending + Approved booking for that vehicle.
+ */
+function syncVehicleStock(PDO $pdo, int $vehicleId): void
+{
+    $v = $pdo->prepare("SELECT total_units FROM vehicles WHERE id = :id LIMIT 1");
+    $v->execute([':id' => $vehicleId]);
+    $row = $v->fetch(PDO::FETCH_ASSOC);
+
+    if (!$row) {
+        return;
+    }
+
+    $total = (int) $row['total_units'];
+
+    $countStmt = $pdo->prepare("
+        SELECT COUNT(*) AS cnt
+        FROM rentals
+        WHERE vehicle_id = :vid
+        AND status IN ('Pending', 'Approved')
+    ");
+    $countStmt->execute([':vid' => $vehicleId]);
+    $booked = (int) $countStmt->fetchColumn();
+
+    $available = max(0, $total - $booked);
+
+    $upd = $pdo->prepare("
+        UPDATE vehicles 
+        SET available_units = :a 
+        WHERE id = :id
+    ");
+    $upd->execute([
+        ':a'  => $available,
+        ':id' => $vehicleId
+    ]);
+}
+
+
+/**
+ * Recalculate available_units for every vehicle.
+ */
+function syncAllVehicleStock(PDO $pdo): void
+{
+    $ids = $pdo->query("SELECT id FROM vehicles")->fetchAll(PDO::FETCH_COLUMN);
+    foreach ($ids as $id) {
+        syncVehicleStock($pdo, (int)$id);
     }
 }

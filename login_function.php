@@ -11,10 +11,6 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $username = trim($_POST['username'] ?? '');
 $password = $_POST['password'] ?? '';
 
-/* =========================
-   VALIDATION
-========================= */
-
 if ($username === '' || $password === '') {
     header(
         "Location: index.php?status=error&message=" .
@@ -27,107 +23,58 @@ try {
 
     $pdo = getConnection();
 
-    /*
-    |--------------------------------------------------------------------------
-    | LOGIN
-    |--------------------------------------------------------------------------
-    | Your project has used both "user" and "users".
-    | We first try the current "users" table.
-    */
+    $stmt = $pdo->prepare("
+        SELECT id, username, email, password, role
+        FROM users
+        WHERE username = :username
+        LIMIT 1
+    ");
 
-    $user = null;
+    $stmt->execute([
+        ':username' => $username
+    ]);
 
-    try {
-
-        $stmt = $pdo->prepare("
-            SELECT id, username, email, password, role
-            FROM users
-            WHERE username = :username
-            LIMIT 1
-        ");
-
-        $stmt->execute([
-            ':username' => $username
-        ]);
-
-        $user = $stmt->fetch(PDO::FETCH_ASSOC);
-
-    } catch (PDOException $e) {
-
-        /*
-        |--------------------------------------------------------------------------
-        | FALLBACK TO "user" TABLE
-        |--------------------------------------------------------------------------
-        */
-
-        $stmt = $pdo->prepare("
-            SELECT id, username, email, password, role
-            FROM user
-            WHERE username = :username
-            LIMIT 1
-        ");
-
-        $stmt->execute([
-            ':username' => $username
-        ]);
-
-        $user = $stmt->fetch(PDO::FETCH_ASSOC);
-    }
-
-
-    /* =========================
-       CHECK USER
-    ========================= */
+    $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$user) {
-
         header(
             "Location: index.php?status=error&message=" .
             urlencode("Invalid username or password.")
         );
-
         exit;
     }
-
-
-    /* =========================
-       CHECK PASSWORD
-    ========================= */
 
     if (!password_verify($password, $user['password'])) {
-
         header(
             "Location: index.php?status=error&message=" .
             urlencode("Invalid username or password.")
         );
-
         exit;
     }
-
-
-    /* =========================
-       CREATE SESSION
-    ========================= */
 
     session_regenerate_id(true);
 
-    $_SESSION['user_id'] = $user['id'];
+    $_SESSION['user_id']  = $user['id'];
     $_SESSION['username'] = $user['username'];
-    $_SESSION['email'] = $user['email'] ?? '';
-    $_SESSION['role'] = $user['role'] ?? 'customer';
-
+    $_SESSION['email']    = $user['email'] ?? '';
+    $_SESSION['role']     = $user['role'] ?? 'customer';
 
     /* =========================
-       SUCCESS
+       ROLE-BASED REDIRECT
+       -------------------------
+       Admin    → dashboard.php
+       Customer → index.php (homepage)
     ========================= */
 
-    header(
-        "Location: index.php?status=success&message=" .
-        urlencode("Login successful! Welcome, " . $user['username'] . ".")
-    );
-
+    if (($_SESSION['role'] ?? '') === 'admin') {
+        header("Location: dashboard.php");
+    } else {
+        header(
+            "Location: index.php?status=success&message=" .
+            urlencode("Welcome back, " . $user['username'] . "!")
+        );
+    }
     exit;
-
 
 } catch (PDOException $e) {
 
@@ -137,7 +84,6 @@ try {
         "Location: index.php?status=error&message=" .
         urlencode("Login failed. Please try again.")
     );
-
     exit;
 }
 ?>

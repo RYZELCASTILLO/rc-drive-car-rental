@@ -4,161 +4,6 @@ require_once 'config.php';
 
 /*
 |--------------------------------------------------------------------------
-| DATABASE DATA
-|--------------------------------------------------------------------------
-*/
-
-$userRentals = [];
-$adminRentals = [];
-$inquiries = [];
-
-$totalFleet = 500;
-$totalRented = 0;
-$availableCars = 500;
-$totalIncome = 0;
-$pendingApprovals = 0;
-
-$dbError = '';
-
-/*
-|--------------------------------------------------------------------------
-| FETCH DATABASE INFORMATION
-|--------------------------------------------------------------------------
-*/
-
-if (isset($_SESSION['user_id'])) {
-
-    try {
-
-        $pdo = getConnection();
-
-        /*
-        |--------------------------------------------------------------------------
-        | ADMIN
-        |--------------------------------------------------------------------------
-        */
-
-        if (($_SESSION['role'] ?? '') === 'admin') {
-
-            // Get all rental records
-            $stmt = $pdo->query("
-                SELECT 
-                    r.*,
-                    COALESCE(u.username, r.customer_name) AS username,
-                    v.vehicle_name,
-                    v.price_per_day
-                FROM rentals r
-                LEFT JOIN users u 
-                    ON r.user_id = u.id
-                LEFT JOIN vehicles v
-                    ON r.vehicle_id = v.id
-                ORDER BY r.created_at DESC
-            ");
-
-            $adminRentals = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-
-            // Calculate dashboard statistics
-            foreach ($adminRentals as $rental) {
-
-                if (($rental['status'] ?? '') === 'Approved') {
-
-                    $totalRented++;
-
-                    $totalIncome +=
-                        (float)($rental['total_fee'] ?? 0);
-
-                } elseif (($rental['status'] ?? '') === 'Pending') {
-
-                    $pendingApprovals++;
-                }
-            }
-
-
-            $availableCars =
-                max(0, $totalFleet - $totalRented);
-
-
-            /*
-            |--------------------------------------------------------------------------
-            | INQUIRIES
-            |--------------------------------------------------------------------------
-            */
-
-            try {
-
-                $inquiryStmt = $pdo->query("
-                    SELECT *
-                    FROM inquiries
-                    ORDER BY created_at DESC
-                ");
-
-                $inquiries =
-                    $inquiryStmt->fetchAll(PDO::FETCH_ASSOC);
-
-            } catch (PDOException $e) {
-
-                $inquiries = [];
-            }
-
-
-        /*
-        |--------------------------------------------------------------------------
-        | CUSTOMER
-        |--------------------------------------------------------------------------
-        */
-
-        } else {
-
-            $userId =
-                $_SESSION['user_id'] ?? 0;
-
-            $username =
-                $_SESSION['username'] ?? '';
-
-
-            $stmt = $pdo->prepare("
-                SELECT 
-                    r.id,
-                    r.user_id,
-                    r.customer_name,
-                    r.phone_number,
-                    r.vehicle_id,
-                    r.vehicle_type,
-                    r.rental_date,
-                    r.return_date,
-                    r.total_fee,
-                    r.status,
-                    r.created_at,
-                    v.vehicle_name,
-                    v.price_per_day
-                FROM rentals r
-                LEFT JOIN vehicles v
-                    ON r.vehicle_id = v.id
-                WHERE r.user_id = :user_id
-                ORDER BY r.created_at DESC
-            ");
-
-
-            $stmt->execute([
-                ':user_id' => $userId
-            ]);
-
-
-            $userRentals =
-                $stmt->fetchAll(PDO::FETCH_ASSOC);
-        }
-
-    } catch (PDOException $e) {
-
-        $dbError =
-            "Database connection error. Please check your database configuration.";
-    }
-}
-
-
-/*
-|--------------------------------------------------------------------------
 | SESSION USER DATA FOR JAVASCRIPT
 |--------------------------------------------------------------------------
 */
@@ -224,17 +69,100 @@ if (isset($_SESSION['user_id'])) {
     >
 
 
-    <!--
-    |--------------------------------------------------------------------------
-    | PASS PHP USER DATA TO JAVASCRIPT
-    |--------------------------------------------------------------------------
-    -->
+    <style>
+        .search-static-text {
+            font-size: 0.95rem;
+            font-weight: 700;
+            color: #212529;
+            letter-spacing: 0.5px;
+        }
+
+        .search-action-text {
+            padding: 22px 30px;
+            font-size: 0.95rem;
+            font-weight: 900;
+            color: #212529;
+            letter-spacing: 0.8px;
+            white-space: nowrap;
+        }
+
+        .contact-box {
+            display: flex !important;
+            align-items: center;
+            gap: 22px;
+            text-align: left !important;
+            padding: 26px 28px !important;
+            min-height: 128px;
+        }
+
+        .contact-icon {
+            flex: 0 0 58px;
+            width: 58px;
+            height: 58px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #FCC113;
+            font-size: 2rem;
+        }
+
+        .contact-info {
+            min-width: 0;
+            flex: 1;
+        }
+
+        .contact-info h4 {
+            margin: 0 0 8px;
+            color: #FCC113;
+            font-size: 0.85rem;
+            font-weight: 900;
+            letter-spacing: 0.6px;
+        }
+
+        .contact-info p {
+            margin: 0 0 5px;
+            color: #ffffff;
+            font-size: 1rem;
+            font-weight: 700;
+            line-height: 1.35;
+            word-break: normal;
+        }
+
+        .contact-info small {
+            display: block;
+            color: #aeb4bd;
+            font-size: 0.78rem;
+            line-height: 1.4;
+        }
+
+        @media (max-width: 768px) {
+            .search-box {
+                display: block;
+            }
+
+            .search-field,
+            .search-action-text {
+                border-right: none;
+                border-bottom: 1px solid rgba(0, 0, 0, 0.15);
+            }
+
+            .cta-banner {
+                display: block;
+            }
+
+            .contact-box {
+                align-items: center;
+            }
+
+            .contact-info p {
+                font-size: 0.95rem;
+            }
+        }
+    </style>
 
     <script>
-
         window.RCDriveUser =
             <?php echo json_encode($activeUser); ?>;
-
     </script>
 
 </head>
@@ -305,22 +233,18 @@ if (isset($_SESSION['user_id'])) {
 
     <div class="nav-actions d-flex gap-2 align-items-center">
 
-
-       
         <?php if (isset($_SESSION['username'])): ?>
 
             <span class="badge <?= ($_SESSION['role'] ?? '') === 'admin' ? 'bg-danger' : 'bg-info' ?> me-1">
                 <?= ($_SESSION['role'] ?? '') === 'admin' ? 'ADMIN' : 'CUSTOMER' ?>
             </span>
 
-            <button
-            <button
-                class="btn btn-outline-warning btn-sm py-2 px-3 fw-bold"
-                data-bs-toggle="modal"
-                data-bs-target="#loginModal"
+            <a
+                href="dashboard.php"
+                class="btn btn-outline-warning btn-sm py-2 px-3 fw-bold text-decoration-none"
             >
 
-                <i class="fa-solid fa-user me-1"></i>
+                <i class="fa-solid fa-gauge me-1"></i>
 
                 <?php
                 echo htmlspecialchars(
@@ -328,7 +252,7 @@ if (isset($_SESSION['user_id'])) {
                 );
                 ?>
 
-            </button>
+            </a>
 
 
             <a
@@ -367,29 +291,6 @@ if (isset($_SESSION['user_id'])) {
     </div>
 
 </header>
-
-
-<!--
-|--------------------------------------------------------------------------
-| DATABASE ERROR
-|--------------------------------------------------------------------------
--->
-
-<?php if ($dbError): ?>
-
-    <div class="container mt-3">
-
-        <div class="alert alert-danger">
-
-            <i class="fa-solid fa-circle-exclamation me-2"></i>
-
-            <?php echo htmlspecialchars($dbError); ?>
-
-        </div>
-
-    </div>
-
-<?php endif; ?>
 
 
 <!--
@@ -514,7 +415,7 @@ if (isset($_SESSION['user_id'])) {
 
             <div class="stat-item">
 
-                <h3>500+</h3>
+                <h3>42</h3>
 
                 <p>VEHICLES</p>
 
@@ -553,67 +454,32 @@ if (isset($_SESSION['user_id'])) {
 
 <!--
 |--------------------------------------------------------------------------
-| SEARCH
+| YELLOW DESIGN BANNER
 |--------------------------------------------------------------------------
 -->
-
 <div class="search-bar-container">
-
     <div class="search-box">
 
         <div class="search-field">
-
-            <label>
-                PICK UP LOCATION
-            </label>
-
-            <input
-                type="text"
-                id="homePickupLocation"
-                placeholder="CITY, AIRPORT, ADDRESS"
-            >
-
+            <label>PICK UP LOCATION</label>
+            <div class="search-static-text">CITY, AIRPORT, ADDRESS</div>
         </div>
-
 
         <div class="search-field">
-
-            <label>
-                PICK UP DATE
-            </label>
-
-            <input
-                type="date"
-                id="homePickupDate"
-            >
-
+            <label>PICK UP DATE</label>
+            <div class="search-static-text">DD / MM / YY</div>
         </div>
-
 
         <div class="search-field">
-
-            <label>
-                RETURN DATE
-            </label>
-
-            <input
-                type="date"
-                id="homeReturnDate"
-            >
-
+            <label>RETURN DATE</label>
+            <div class="search-static-text">DD / MM / YY</div>
         </div>
 
-
-        <button
-            type="button"
-            class="search-btn"
-            onclick="searchFleet()"
-        >
-            SEARCH —
-        </button>
+        <div class="search-action-text">
+            SEARCH
+        </div>
 
     </div>
-
 </div>
 
 
@@ -638,8 +504,6 @@ if (isset($_SESSION['user_id'])) {
         <span>Perfect Ride</span>
     </h2>
 
-
-    <!-- FILTER -->
 
     <div class="fleet-filter">
 
@@ -680,8 +544,6 @@ if (isset($_SESSION['user_id'])) {
 
     </div>
 
-
-    <!-- VEHICLES -->
 
     <div class="fleet-grid">
 
@@ -744,7 +606,7 @@ if (isset($_SESSION['user_id'])) {
                 <button
                     type="button"
                     class="btn-outline-card"
-                    onclick="openRentModal('Executive Sedan', 2500)"
+                    onclick="openRentModal('Executive Sedan', 2500, 20)"
                 >
                     Rent Vehicle
                 </button>
@@ -809,7 +671,7 @@ if (isset($_SESSION['user_id'])) {
                 <button
                     type="button"
                     class="btn-outline-card"
-                    onclick="openRentModal('Family SUV', 3800)"
+                    onclick="openRentModal('Family SUV', 3800, 20)"
                 >
                     Rent Vehicle
                 </button>
@@ -878,7 +740,7 @@ if (isset($_SESSION['user_id'])) {
                 <button
                     type="button"
                     class="btn-outline-card"
-                    onclick="openRentModal('Luxury Sports', 6500)"
+                    onclick="openRentModal('Luxury Sports', 6500, 2)"
                 >
                     Rent Vehicle
                 </button>
@@ -1243,7 +1105,7 @@ if (isset($_SESSION['user_id'])) {
 
 <!--
 |--------------------------------------------------------------------------
-| LOGIN / REGISTER / DASHBOARD MODAL
+| LOGIN / REGISTER MODAL
 |--------------------------------------------------------------------------
 -->
 
@@ -1255,7 +1117,7 @@ if (isset($_SESSION['user_id'])) {
 >
 
     <div
-        class="modal-dialog modal-dialog-centered modal-xl"
+        class="modal-dialog modal-dialog-centered modal-lg"
     >
 
         <div
@@ -1288,8 +1150,6 @@ if (isset($_SESSION['user_id'])) {
 
             <div class="modal-body p-4">
 
-
-                <!-- LOGGED OUT -->
 
                 <?php if (!isset($_SESSION['user_id'])): ?>
 
@@ -1480,638 +1340,39 @@ if (isset($_SESSION['user_id'])) {
                     </div>
 
 
-                <!-- ADMIN -->
-
-                <?php elseif (($_SESSION['role'] ?? '') === 'admin'): ?>
-
-
-                    <div id="adminDashboard">
-
-
-                        <div
-                            class="d-flex justify-content-between align-items-center mb-4"
-                        >
-
-                            <h4 class="text-warning">
-
-                                <i class="fa-solid fa-chart-line"></i>
-
-                                Administrator Dashboard
-
-                            </h4>
-
-
-                            <a
-                                href="logout.php"
-                                class="btn btn-sm btn-outline-danger"
-                            >
-                                Logout Admin
-                            </a>
-
-                        </div>
-
-
-                        <!-- METRICS -->
-
-                        <div class="row g-3 mb-4">
-
-
-                            <div class="col-md-3">
-
-                                <div
-                                    class="p-3 bg-secondary rounded text-center border border-warning"
-                                >
-
-                                    <small>
-                                        AVAILABLE CARS
-                                    </small>
-
-                                    <h2 class="text-warning">
-                                        <?= $availableCars ?>
-                                    </h2>
-
-                                </div>
-
-                            </div>
-
-
-                            <div class="col-md-3">
-
-                                <div
-                                    class="p-3 bg-secondary rounded text-center border border-info"
-                                >
-
-                                    <small>
-                                        CARS RENTED
-                                    </small>
-
-                                    <h2 class="text-info">
-                                        <?= $totalRented ?>
-                                    </h2>
-
-                                </div>
-
-                            </div>
-
-
-                            <div class="col-md-3">
-
-                                <div
-                                    class="p-3 bg-secondary rounded text-center border border-success"
-                                >
-
-                                    <small>
-                                        TOTAL INCOME
-                                    </small>
-
-                                    <h2 class="text-success">
-                                        ₱<?= number_format($totalIncome, 2) ?>
-                                    </h2>
-
-                                </div>
-
-                            </div>
-
-
-                            <div class="col-md-3">
-
-                                <div
-                                    class="p-3 bg-secondary rounded text-center border border-danger"
-                                >
-
-                                    <small>
-                                        PENDING
-                                    </small>
-
-                                    <h2 class="text-danger">
-                                        <?= $pendingApprovals ?>
-                                    </h2>
-
-                                </div>
-
-                            </div>
-
-
-                        </div>
-
-
-                        <!-- RENTAL TABLE -->
-
-                        <h5
-                            class="text-warning border-bottom border-secondary pb-2 mb-3"
-                        >
-
-                            <i class="fa-solid fa-car-side"></i>
-
-                            Customer Rentals & Approvals
-
-                        </h5>
-
-
-                        <div class="table-responsive mb-4">
-
-                            <table
-                                class="table table-dark table-striped align-middle"
-                            >
-
-                                <thead>
-
-                                    <tr>
-
-                                        <th>Customer</th>
-
-                                        <th>Phone</th>
-
-                                        <th>Vehicle</th>
-
-                                        <th>Pickup</th>
-
-                                        <th>Return</th>
-
-                                        <th>Total</th>
-
-                                        <th>Status</th>
-
-                                        <th>Action</th>
-
-                                    </tr>
-
-                                </thead>
-
-
-                                <tbody>
-
-
-                                    <?php if (empty($adminRentals)): ?>
-
-                                        <tr>
-
-                                            <td
-                                                colspan="8"
-                                                class="text-center text-muted"
-                                            >
-                                                No rental bookings registered yet.
-                                            </td>
-
-                                        </tr>
-
-
-                                    <?php else: ?>
-
-
-                                        <?php foreach ($adminRentals as $rental): ?>
-
-                                            <tr>
-
-
-                                                <td class="fw-bold text-warning">
-
-                                                    <?= htmlspecialchars(
-                                                        $rental['username'] ?? $rental['customer_name'] ?? 'Customer'
-                                                    ) ?>
-
-                                                </td>
-
-
-                                                <td>
-
-                                                    <?= htmlspecialchars(
-                                                        $rental['phone_number'] ?? 'N/A'
-                                                    ) ?>
-
-                                                </td>
-
-
-                                                <td>
-
-                                                    <?= htmlspecialchars(
-                                                        $rental['vehicle_type'] ?? 'N/A'
-                                                    ) ?>
-
-                                                </td>
-
-
-                                                <td>
-
-                                                    <?= htmlspecialchars(
-                                                        $rental['rental_date'] ?? ''
-                                                    ) ?>
-
-                                                </td>
-
-
-                                                <td>
-
-                                                    <?= htmlspecialchars(
-                                                        $rental['return_date'] ?? ''
-                                                    ) ?>
-
-                                                </td>
-
-
-                                                <td class="text-success fw-bold">
-
-                                                    ₱<?= number_format(
-                                                        (float)($rental['total_fee'] ?? 0),
-                                                        2
-                                                    ) ?>
-
-                                                </td>
-
-
-                                                <td>
-
-                                                    <?php
-
-                                                    $status =
-                                                        $rental['status'] ?? 'Pending';
-
-                                                    if ($status === 'Approved') {
-
-                                                        $badge =
-                                                            'bg-success';
-
-                                                    } elseif ($status === 'Rejected') {
-
-                                                        $badge =
-                                                            'bg-danger';
-
-                                                    } else {
-
-                                                        $badge =
-                                                            'bg-warning text-dark';
-                                                    }
-
-                                                    ?>
-
-
-                                                    <span
-                                                        class="badge <?= $badge ?>"
-                                                    >
-                                                        <?= htmlspecialchars($status) ?>
-                                                    </span>
-
-                                                </td>
-
-
-                                                <td>
-
-
-                                                    <?php if ($status === 'Pending'): ?>
-
-                                                        <a
-                                                            href="admin_action.php?action=approve&id=<?= (int)$rental['id'] ?>"
-                                                            class="btn btn-sm btn-success me-1"
-                                                        >
-                                                            <i class="fa-solid fa-check"></i>
-                                                        </a>
-
-
-                                                        <a
-                                                            href="admin_action.php?action=reject&id=<?= (int)$rental['id'] ?>"
-                                                            class="btn btn-sm btn-danger"
-                                                        >
-                                                            <i class="fa-solid fa-xmark"></i>
-                                                        </a>
-
-
-                                                    <?php else: ?>
-
-                                                        <span class="text-muted">
-                                                            Processed
-                                                        </span>
-
-                                                    <?php endif; ?>
-
-
-                                                </td>
-
-
-                                            </tr>
-
-                                        <?php endforeach; ?>
-
-
-                                    <?php endif; ?>
-
-
-                                </tbody>
-
-                            </table>
-
-                        </div>
-
-
-                        <!-- INQUIRIES -->
-
-                        <h5
-                            class="text-warning border-bottom border-secondary pb-2 mb-3"
-                        >
-
-                            <i class="fa-solid fa-envelope"></i>
-
-                            Client Inquiries
-
-                        </h5>
-
-
-                        <div class="table-responsive">
-
-                            <table
-                                class="table table-dark table-hover"
-                            >
-
-                                <thead>
-
-                                    <tr>
-
-                                        <th>Name</th>
-
-                                        <th>Email</th>
-
-                                        <th>Message</th>
-
-                                        <th>Date</th>
-
-                                    </tr>
-
-                                </thead>
-
-
-                                <tbody>
-
-
-                                    <?php if (empty($inquiries)): ?>
-
-                                        <tr>
-
-                                            <td
-                                                colspan="4"
-                                                class="text-center text-muted"
-                                            >
-                                                No inquiries yet.
-                                            </td>
-
-                                        </tr>
-
-
-                                    <?php else: ?>
-
-
-                                        <?php foreach ($inquiries as $inq): ?>
-
-                                            <tr>
-
-                                                <td>
-
-                                                    <?= htmlspecialchars(
-                                                        $inq['name'] ?? 'Client'
-                                                    ) ?>
-
-                                                </td>
-
-
-                                                <td class="text-warning">
-
-                                                    <?= htmlspecialchars(
-                                                        $inq['email'] ?? 'N/A'
-                                                    ) ?>
-
-                                                </td>
-
-
-                                                <td>
-
-                                                    <?= htmlspecialchars(
-                                                        $inq['message'] ?? ''
-                                                    ) ?>
-
-                                                </td>
-
-
-                                                <td>
-
-                                                    <?= htmlspecialchars(
-                                                        $inq['created_at'] ?? ''
-                                                    ) ?>
-
-                                                </td>
-
-                                            </tr>
-
-                                        <?php endforeach; ?>
-
-
-                                    <?php endif; ?>
-
-
-                                </tbody>
-
-                            </table>
-
-                        </div>
-
-
-                    </div>
-
-
-                <!-- CUSTOMER -->
-
                 <?php else: ?>
 
 
-                    <div id="customerDashboard">
+                    <div class="text-center py-4">
 
+                        <i
+                            class="fa-solid fa-circle-check text-warning"
+                            style="font-size:3rem;"
+                        ></i>
 
-                        <div
-                            class="d-flex justify-content-between align-items-center mb-3"
+                        <h5 class="mt-3">
+
+                            You are logged in as
+
+                            <span class="text-warning">
+
+                                <?= htmlspecialchars($_SESSION['username']) ?>
+
+                            </span>
+
+                        </h5>
+
+                        <p class="text-muted small">
+                            Visit your dashboard to manage your bookings.
+                        </p>
+
+                        <a
+                            href="dashboard.php"
+                            class="btn btn-warning fw-bold mt-2"
                         >
-
-                            <h4>
-
-                                Welcome,
-
-                                <span class="text-warning">
-
-                                    <?= htmlspecialchars(
-                                        $_SESSION['username']
-                                    ) ?>
-
-                                </span>
-
-                            </h4>
-
-
-                            <div>
-
-                                <a
-                                    href="delete_account.php"
-                                    class="btn btn-sm btn-danger me-1"
-                                    onclick="return confirm('Are you sure you want to permanently delete your account?');"
-                                >
-                                    Delete Account
-                                </a>
-
-
-                                <a
-                                    href="logout.php"
-                                    class="btn btn-sm btn-outline-danger"
-                                >
-                                    Logout
-                                </a>
-
-                            </div>
-
-                        </div>
-
-
-                        <h6>
-                            Your Rental History & Reservations
-                        </h6>
-
-
-                        <div class="table-responsive mt-3">
-
-                            <table
-                                class="table table-dark table-hover align-middle"
-                            >
-
-                                <thead>
-
-                                    <tr>
-
-                                        <th>Vehicle</th>
-
-                                        <th>Pickup</th>
-
-                                        <th>Return</th>
-
-                                        <th>Total</th>
-
-                                        <th>Status</th>
-
-                                    </tr>
-
-                                </thead>
-
-
-                                <tbody>
-
-
-                                    <?php if (empty($userRentals)): ?>
-
-                                        <tr>
-
-                                            <td
-                                                colspan="5"
-                                                class="text-center text-muted"
-                                            >
-
-                                                You have no booking requests yet.
-                                                Pick a car from the fleet section
-                                                to start!
-
-                                            </td>
-
-                                        </tr>
-
-
-                                    <?php else: ?>
-
-
-                                        <?php foreach ($userRentals as $rental): ?>
-
-                                            <tr>
-
-                                                <td class="fw-bold">
-
-                                                    <span class="text-warning">
-                                                        <?= htmlspecialchars(
-                                                            $rental['vehicle_name']
-                                                                ?? $rental['vehicle_type']
-                                                                ?? 'Unknown Vehicle'
-                                                        ) ?>
-                                                    </span>
-
-                                                    <?php if (!empty($rental['vehicle_id'])): ?>
-                                                        <div class="small text-muted">
-                                                            Vehicle ID: <?= (int)$rental['vehicle_id'] ?>
-                                                        </div>
-                                                    <?php endif; ?>
-
-                                                </td>
-
-
-                                                <td>
-
-                                                    <?= htmlspecialchars(
-                                                        $rental['rental_date']
-                                                    ) ?>
-
-                                                </td>
-
-
-                                                <td>
-
-                                                    <?= htmlspecialchars(
-                                                        $rental['return_date']
-                                                    ) ?>
-
-                                                </td>
-
-
-                                                <td class="text-warning fw-bold">
-
-                                                    ₱<?= number_format(
-                                                        (float)$rental['total_fee'],
-                                                        2
-                                                    ) ?>
-
-                                                </td>
-
-
-                                                <td>
-
-                                                    <?php
-
-                                                    $status =
-                                                        $rental['status'] ?? 'Pending';
-
-                                                    $badge =
-                                                        $status === 'Approved'
-                                                            ? 'bg-success'
-                                                            : (
-                                                                $status === 'Rejected'
-                                                                    ? 'bg-danger'
-                                                                    : 'bg-warning text-dark'
-                                                            );
-
-                                                    ?>
-
-
-                                                    <span
-                                                        class="badge <?= $badge ?>"
-                                                    >
-
-                                                        <?= htmlspecialchars($status) ?>
-
-                                                    </span>
-
-                                                </td>
-
-                                            </tr>
-
-                                        <?php endforeach; ?>
-
-
-                                    <?php endif; ?>
-
-
-                                </tbody>
-
-                            </table>
-
-                        </div>
+                            <i class="fa-solid fa-gauge me-1"></i>
+                            GO TO DASHBOARD
+                        </a>
 
                     </div>
 
@@ -2187,8 +1448,6 @@ if (isset($_SESSION['user_id'])) {
                 >
 
 
-                    <!-- VEHICLE -->
-
                     <input
                         type="hidden"
                         name="vehicle_type"
@@ -2196,15 +1455,11 @@ if (isset($_SESSION['user_id'])) {
                     >
 
 
-                    <!-- RATE IS USED ONLY BY JAVASCRIPT -->
-
                     <input
                         type="hidden"
                         id="selectedCarRate"
                     >
 
-
-                    <!-- CUSTOMER -->
 
                     <div class="mb-3">
 
@@ -2227,8 +1482,6 @@ if (isset($_SESSION['user_id'])) {
                     </div>
 
 
-                    <!-- PHONE -->
-
                     <div class="mb-3">
 
                         <label class="form-label">
@@ -2249,7 +1502,24 @@ if (isset($_SESSION['user_id'])) {
                     </div>
 
 
-                    <!-- DATES -->
+                    <div class="mb-3">
+
+                        <label class="form-label">
+                            Driver's License Number
+                        </label>
+
+
+                        <input
+                            type="text"
+                            name="driver_license"
+                            id="rentDriverLicense"
+                            class="form-control bg-secondary text-white border-0"
+                            placeholder="e.g. N01-23-456789"
+                            required
+                        >
+
+                    </div>
+
 
                     <div class="row">
 
@@ -2292,7 +1562,6 @@ if (isset($_SESSION['user_id'])) {
 
                     </div>
 
-                    <!-- PAYMENT METHOD -->
 
                     <div class="mb-3">
 
@@ -2314,7 +1583,7 @@ if (isset($_SESSION['user_id'])) {
                         </select>
 
                     </div>
-                    <!-- TOTAL -->
+
 
                     <div
                         class="p-3 bg-secondary rounded mb-3"
@@ -2326,6 +1595,9 @@ if (isset($_SESSION['user_id'])) {
 
                             <span>
                                 Duration:
+                                <small class="text-muted" style="font-size:0.75rem;">
+                                    (max <?= MAX_RENTAL_DAYS ?> days)
+                                </small>
                             </span>
 
 
@@ -2360,8 +1632,6 @@ if (isset($_SESSION['user_id'])) {
                     </div>
 
 
-                    <!-- SUBMIT -->
-
                     <button
                         type="submit"
                         name="book_rent"
@@ -2382,6 +1652,173 @@ if (isset($_SESSION['user_id'])) {
     </div>
 
 </div>
+
+
+<!--
+|--------------------------------------------------------------------------
+| TESTIMONIALS
+|--------------------------------------------------------------------------
+-->
+<section class="testimonial-section">
+    <span class="sub-heading-center">
+        — TESTIMONIAL —
+    </span>
+
+    <h2>
+        WHAT CLIENTS <span>SAY</span>
+    </h2>
+
+    <div class="testimonial-grid">
+
+        <div class="testimonial-card">
+            <div class="stars">★★★★★</div>
+
+            <p>
+                “RC Drive made my Dumaguete business trip
+                seamless. The car was spotless and pickup was
+                instant. Will definitely use again.”
+            </p>
+
+            <div class="client-info">
+                <div class="avatar">M</div>
+
+                <div>
+                    <h4>Marcos Santos</h4>
+                    <small>Business Traveler</small>
+                </div>
+            </div>
+        </div>
+
+        <div class="testimonial-card">
+            <div class="stars">★★★★★</div>
+
+            <p>
+                “Rented an SUV for our Negros Oriental road
+                trip, spacious, clean, and the staff were
+                incredibly helpful. Best rental experience.”
+            </p>
+
+            <div class="client-info">
+                <div class="avatar">A</div>
+
+                <div>
+                    <h4>Ana Reyes</h4>
+                    <small>Family Trip</small>
+                </div>
+            </div>
+        </div>
+
+        <div class="testimonial-card">
+            <div class="stars">★★★★★</div>
+
+            <p>
+                “Competitive pricing and a great fleet. I always
+                find exactly what I need for my road trips
+                around Negros with RC Drive.”
+            </p>
+
+            <div class="client-info">
+                <div class="avatar">D</div>
+
+                <div>
+                    <h4>David Lim</h4>
+                    <small>Weekend Adventurer</small>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</section>
+
+
+<!--
+|--------------------------------------------------------------------------
+| CTA BANNER
+|--------------------------------------------------------------------------
+-->
+<section class="cta-banner">
+
+    <div>
+        <h2>READY TO HIT THE ROAD?</h2>
+
+        <p>
+            Book now and get your first day on weekend rentals.
+            Limited offer.
+        </p>
+    </div>
+
+
+</section>
+
+
+<!--
+|--------------------------------------------------------------------------
+| CONTACT
+|--------------------------------------------------------------------------
+-->
+<section
+    id="contact"
+    class="contact-section"
+>
+
+    <span class="sub-heading-center">
+        — GET IN TOUCH —
+    </span>
+
+    <h2 class="mt-3">
+        WE'RE HERE TO <span>HELP</span>
+    </h2>
+
+    <div class="contact-cards mt-5">
+
+        <div class="contact-box">
+            <div class="contact-icon">
+                <i class="fa-solid fa-location-dot"></i>
+            </div>
+
+            <div class="contact-info">
+                <h4>OUR LOCATION</h4>
+                <p>Dumaguete City, Negros Oriental</p>
+                <small>Philippines</small>
+            </div>
+        </div>
+
+        <div class="contact-box">
+            <div class="contact-icon">
+                <i class="fa-solid fa-phone"></i>
+            </div>
+
+            <div class="contact-info">
+                <h4>PHONE NUMBER</h4>
+                <p>+63 930 222 9696</p>
+                <small>Mon - Sun, 7:00 AM - 9:00 PM</small>
+            </div>
+        </div>
+
+        <div class="contact-box">
+            <div class="contact-icon">
+                <i class="fa-solid fa-envelope"></i>
+            </div>
+
+            <div class="contact-info">
+                <h4>EMAIL ADDRESS</h4>
+                <p>support@rcdrive.com</p>
+                <small>We reply within 2 hours</small>
+            </div>
+        </div>
+
+    </div>
+
+    <button
+        type="button"
+        class="btn-yellow mt-4"
+        data-bs-toggle="modal"
+        data-bs-target="#inquiryModal"
+    >
+        SEND INQUIRY
+    </button>
+
+</section>
 
 
 <!--
@@ -2506,7 +1943,6 @@ if (isset($_SESSION['user_id'])) {
 
 <footer
     class="site-footer"
-    id="contact"
 >
 
 
@@ -2743,14 +2179,6 @@ if (isset($_SESSION['user_id'])) {
 
 </footer>
 
-
-<!--
-|--------------------------------------------------------------------------
-| JAVASCRIPT
-|--------------------------------------------------------------------------
-| Bootstrap MUST load first.
-|--------------------------------------------------------------------------
--->
 
 <script
     src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"

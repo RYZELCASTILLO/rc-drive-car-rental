@@ -42,3 +42,4 @@ try {
     header('Location: index.php?status=error&message=' . urlencode("Could not create account. Username or email may already be taken."));
     exit;
 }
+?>

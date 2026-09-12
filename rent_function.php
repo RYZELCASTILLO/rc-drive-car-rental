@@ -16,12 +16,13 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
-$userId = (int) $_SESSION['user_id'];
-$customerName = trim($_SESSION['username'] ?? '');
-$vehicleType = trim($_POST['vehicle_type'] ?? '');
-$phoneNumber = trim($_POST['phone_number'] ?? '');
-$rentalDate = trim($_POST['rental_date'] ?? '');
-$returnDate = trim($_POST['return_date'] ?? '');
+$userId        = (int) $_SESSION['user_id'];
+$customerName  = trim($_SESSION['username'] ?? '');
+$vehicleType   = trim($_POST['vehicle_type'] ?? '');
+$phoneNumber   = trim($_POST['phone_number'] ?? '');
+$driverLicense = trim($_POST['driver_license'] ?? '');
+$rentalDate    = trim($_POST['rental_date'] ?? '');
+$returnDate    = trim($_POST['return_date'] ?? '');
 $paymentMethod = trim($_POST['payment_method'] ?? '');
 
 $allowedPayments = ['GCash', 'PayMaya', 'Credit/Debit Card', 'Cash on Pickup'];
@@ -29,13 +30,14 @@ $allowedPayments = ['GCash', 'PayMaya', 'Credit/Debit Card', 'Cash on Pickup'];
 if (
     $vehicleType === '' ||
     $phoneNumber === '' ||
+    $driverLicense === '' ||
     $rentalDate === '' ||
     $returnDate === '' ||
     $paymentMethod === ''
 ) {
     header(
         "Location: index.php?status=error&message=" .
-        urlencode("Please complete all rental fields, including payment method.")
+        urlencode("Please complete all rental fields, including driver's license and payment method.")
     );
     exit;
 }
@@ -52,6 +54,14 @@ if (!preg_match('/^[0-9+\-\s]{10,15}$/', $phoneNumber)) {
     header(
         "Location: index.php?status=error&message=" .
         urlencode("Please enter a valid phone number.")
+    );
+    exit;
+}
+
+if (strlen($driverLicense) < 5) {
+    header(
+        "Location: index.php?status=error&message=" .
+        urlencode("Please enter a valid driver's license number.")
     );
     exit;
 }
@@ -98,8 +108,16 @@ if ($end < $start) {
 
 $days = $start->diff($end)->days;
 
-if ($days < 1) {
-    $days = 1;
+if ($days < MIN_RENTAL_DAYS) {
+    $days = MIN_RENTAL_DAYS;
+}
+
+if ($days > MAX_RENTAL_DAYS) {
+    header(
+        "Location: index.php?status=error&message=" .
+        urlencode("Rentals are limited to a maximum of " . MAX_RENTAL_DAYS . " day(s). Please adjust your dates.")
+    );
+    exit;
 }
 
 try {
@@ -107,7 +125,7 @@ try {
     $pdo = getConnection();
 
     $vehicleStmt = $pdo->prepare("
-        SELECT id, vehicle_name, price_per_day, availability
+        SELECT id, vehicle_name, price_per_day, availability, total_units, available_units
         FROM vehicles
         WHERE vehicle_name = :vehicle_name
         LIMIT 1
@@ -124,9 +142,10 @@ try {
         exit;
     }
 
-    $vehicleId = (int) $vehicle['id'];
+    $vehicleId   = (int) $vehicle['id'];
     $vehicleName = $vehicle['vehicle_name'];
-    $dailyRate = (float) $vehicle['price_per_day'];
+    $dailyRate   = (float) $vehicle['price_per_day'];
+    $totalUnits  = (int) $vehicle['total_units'];
 
     if (
         isset($vehicle['availability']) &&
@@ -134,43 +153,106 @@ try {
     ) {
         header(
             "Location: index.php?status=error&message=" .
-            urlencode("This vehicle is currently unavailable.")
+            urlencode("Sorry, $vehicleName is currently marked as unavailable.")
         );
         exit;
     }
 
-    $totalFee = $dailyRate * $days;
+    /* =========================================================
+       CHECK TOTAL AVAILABLE UNITS
+    ========================================================= */
 
-    $check = $pdo->prepare("
-        SELECT id
+    $countStmt = $pdo->prepare("
+        SELECT COUNT(*) AS cnt
+        FROM rentals
+        WHERE vehicle_id = :vid
+        AND status IN ('Pending', 'Approved')
+    ");
+    $countStmt->execute([':vid' => $vehicleId]);
+    $bookedTotal = (int) $countStmt->fetchColumn();
+
+    if ($bookedTotal >= $totalUnits) {
+        header(
+            "Location: index.php?status=error&message=" .
+            urlencode("Sorry, all $totalUnits unit(s) of $vehicleName have no available units right now. Please choose a different vehicle or try again later.")
+        );
+        exit;
+    }
+
+    /* =========================================================
+       PER-DATE OVERBOOKING CHECK
+    ========================================================= */
+
+    $requestedStart = new DateTime($rentalDate);
+    $requestedEnd   = new DateTime($returnDate);
+
+    $dateRange = [];
+    $interval  = new DateInterval('P1D');
+    $period    = new DatePeriod($requestedStart, $interval, $requestedEnd->modify('+1 day'));
+
+    foreach ($period as $date) {
+        $dateRange[] = $date->format('Y-m-d');
+    }
+
+    $checkStmt = $pdo->prepare("
+        SELECT rental_date, return_date
         FROM rentals
         WHERE vehicle_id = :vehicle_id
         AND status IN ('Pending', 'Approved')
         AND rental_date <= :return_date
         AND return_date >= :rental_date
-        LIMIT 1
     ");
 
-    $check->execute([
-        ':vehicle_id'  => $vehicleId,
-        ':rental_date' => $rentalDate,
-        ':return_date' => $returnDate
+    $checkStmt->execute([
+        ':vehicle_id'   => $vehicleId,
+        ':rental_date'  => $rentalDate,
+        ':return_date'  => $returnDate
     ]);
 
-    if ($check->fetch()) {
-        header(
-            "Location: index.php?status=error&message=" .
-            urlencode("This vehicle is already reserved for the selected dates.")
-        );
-        exit;
+    $overlappingBookings = $checkStmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $bookedCountByDate = [];
+
+    foreach ($overlappingBookings as $booking) {
+        $bStart = new DateTime($booking['rental_date']);
+        $bEnd   = new DateTime($booking['return_date']);
+        $bEnd->modify('+1 day');
+
+        $bPeriod = new DatePeriod($bStart, $interval, $bEnd);
+
+        foreach ($bPeriod as $date) {
+            $dateKey = $date->format('Y-m-d');
+            if (!isset($bookedCountByDate[$dateKey])) {
+                $bookedCountByDate[$dateKey] = 0;
+            }
+            $bookedCountByDate[$dateKey]++;
+        }
     }
+
+    foreach ($dateRange as $date) {
+        $bookedCount = $bookedCountByDate[$date] ?? 0;
+
+        if ($bookedCount >= $totalUnits) {
+            header(
+                "Location: index.php?status=error&message=" .
+                urlencode("Sorry, $vehicleName has no more available units for $date. Please select different dates.")
+            );
+            exit;
+        }
+    }
+
+    /* =========================================================
+       SAVE BOOKING
+    ========================================================= */
+
+    $totalFee = $dailyRate * $days;
 
     $stmt = $pdo->prepare("
         INSERT INTO rentals
-        (user_id, customer_name, phone_number, vehicle_id, vehicle_type,
+        (user_id, customer_name, phone_number, driver_license, vehicle_id, vehicle_type,
          rental_date, return_date, payment_method, total_fee, status)
         VALUES
-        (:user_id, :customer_name, :phone_number, :vehicle_id, :vehicle_type,
+        (:user_id, :customer_name, :phone_number, :driver_license, :vehicle_id, :vehicle_type,
          :rental_date, :return_date, :payment_method, :total_fee, 'Pending')
     ");
 
@@ -178,6 +260,7 @@ try {
         ':user_id'        => $userId,
         ':customer_name'  => $customerName,
         ':phone_number'   => $phoneNumber,
+        ':driver_license' => $driverLicense,
         ':vehicle_id'     => $vehicleId,
         ':vehicle_type'   => $vehicleName,
         ':rental_date'    => $rentalDate,
@@ -185,6 +268,8 @@ try {
         ':payment_method' => $paymentMethod,
         ':total_fee'      => $totalFee
     ]);
+
+    syncVehicleStock($pdo, $vehicleId);
 
     header(
         "Location: index.php?status=success&message=" .
@@ -200,3 +285,4 @@ try {
     );
     exit;
 }
+?>
