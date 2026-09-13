@@ -1,33 +1,27 @@
-# IDE / Editor files
+# Debug and local-only files
+debug_*.php
+*.log
+
+# Environment files with credentials
+.env
+.env.local
+
+# Editor / OS junk
 .vscode/
 .idea/
-*.swp
-*.swo
-*~
-
-# OS files
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# PHP error logs
-*.log
-error_log
-
-# Database configuration (if you have sensitive info)
-# config.php
-
-# Temporary files
-*.tmp
-*.temp
-
 # Backup files
 *.bak
-*.backup
+*.sql.gz
+*~
 
-# Composer
+# Composer / Node (if you add them later)
 vendor/
-composer.lock
-
-# Node modules
 node_modules/
+
+# Uploads / temp
+uploads/
+tmp/

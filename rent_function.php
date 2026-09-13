@@ -124,17 +124,20 @@ try {
 
     $pdo = getConnection();
 
-    $vehicleStmt = $pdo->prepare("
+    $pdo->beginTransaction();
+
+    $lockStmt = $pdo->prepare("
         SELECT id, vehicle_name, price_per_day, availability, total_units, available_units
         FROM vehicles
         WHERE vehicle_name = :vehicle_name
         LIMIT 1
+        FOR UPDATE
     ");
-
-    $vehicleStmt->execute([':vehicle_name' => $vehicleType]);
-    $vehicle = $vehicleStmt->fetch(PDO::FETCH_ASSOC);
+    $lockStmt->execute([':vehicle_name' => $vehicleType]);
+    $vehicle = $lockStmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$vehicle) {
+        $pdo->rollBack();
         header(
             "Location: index.php?status=error&message=" .
             urlencode("Invalid vehicle selected.")
@@ -144,13 +147,13 @@ try {
 
     $vehicleId   = (int) $vehicle['id'];
     $vehicleName = $vehicle['vehicle_name'];
-    $dailyRate   = (float) $vehicle['price_per_day'];
     $totalUnits  = (int) $vehicle['total_units'];
 
     if (
         isset($vehicle['availability']) &&
         strtolower(trim($vehicle['availability'])) !== 'available'
     ) {
+        $pdo->rollBack();
         header(
             "Location: index.php?status=error&message=" .
             urlencode("Sorry, $vehicleName is currently marked as unavailable.")
@@ -158,26 +161,24 @@ try {
         exit;
     }
 
-    /* Check total available units — only Approved bookings count */
-
     $countStmt = $pdo->prepare("
         SELECT COUNT(*) AS cnt
         FROM rentals
         WHERE vehicle_id = :vid
-        AND status = 'Approved'
+          AND status IN ('Approved','Picked Up')
+          AND return_date >= CURDATE()
     ");
     $countStmt->execute([':vid' => $vehicleId]);
     $bookedTotal = (int) $countStmt->fetchColumn();
 
     if ($bookedTotal >= $totalUnits) {
+        $pdo->rollBack();
         header(
             "Location: index.php?status=error&message=" .
             urlencode("Sorry, all $totalUnits unit(s) of $vehicleName are currently rented. Please choose a different vehicle or try again later.")
         );
         exit;
     }
-
-    /* Per-date overbooking check — only Approved bookings block dates */
 
     $requestedStart = new DateTime($rentalDate);
     $requestedEnd   = new DateTime($returnDate);
@@ -194,9 +195,9 @@ try {
         SELECT rental_date, return_date
         FROM rentals
         WHERE vehicle_id = :vehicle_id
-        AND status = 'Approved'
-        AND rental_date <= :return_date
-        AND return_date >= :rental_date
+          AND status IN ('Approved','Picked Up')
+          AND rental_date <= :return_date
+          AND return_date >= :rental_date
     ");
 
     $checkStmt->execute([
@@ -217,11 +218,8 @@ try {
         $bPeriod = new DatePeriod($bStart, $interval, $bEnd);
 
         foreach ($bPeriod as $date) {
-            $dateKey = $date->format('Y-m-d');
-            if (!isset($bookedCountByDate[$dateKey])) {
-                $bookedCountByDate[$dateKey] = 0;
-            }
-            $bookedCountByDate[$dateKey]++;
+            $key = $date->format('Y-m-d');
+            $bookedCountByDate[$key] = ($bookedCountByDate[$key] ?? 0) + 1;
         }
     }
 
@@ -229,6 +227,7 @@ try {
         $bookedCount = $bookedCountByDate[$date] ?? 0;
 
         if ($bookedCount >= $totalUnits) {
+            $pdo->rollBack();
             header(
                 "Location: index.php?status=error&message=" .
                 urlencode("Sorry, $vehicleName has no more available units for $date. Please select different dates.")
@@ -237,9 +236,7 @@ try {
         }
     }
 
-    /* Save booking as Pending — stock does NOT change yet */
-
-    $totalFee = $dailyRate * $days;
+    $totalFee = calculateRentalFee($pdo, $vehicleId, $rentalDate, $returnDate, $days);
 
     $stmt = $pdo->prepare("
         INSERT INTO rentals
@@ -263,6 +260,26 @@ try {
         ':total_fee'      => $totalFee
     ]);
 
+    $newRentalId = (int) $pdo->lastInsertId();
+
+    try {
+        $notify = $pdo->prepare("
+            INSERT INTO notifications
+                (recipient_role, recipient_id, rental_id, type, title, message)
+            VALUES
+                ('admin', NULL, :rental_id, 'new_booking', :title, :message)
+        ");
+        $notify->execute([
+            ':rental_id' => $newRentalId,
+            ':title'     => "New booking from " . $customerName,
+            ':message'   => "$vehicleName for $days day(s)\nPickup: $rentalDate\nReturn: $returnDate\nTotal: PHP " . number_format($totalFee, 2)
+        ]);
+    } catch (PDOException $e) {
+        error_log("Admin notification failed: " . $e->getMessage());
+    }
+
+    $pdo->commit();
+
     header(
         "Location: index.php?status=success&message=" .
         urlencode("Booking submitted! " . $vehicleName . " for " . $days . " day(s) via " . $paymentMethod . ". Total: ₱" . number_format($totalFee, 2) . ". Wait for admin approval.")
@@ -270,11 +287,16 @@ try {
     exit;
 
 } catch (PDOException $e) {
+
+    if (isset($pdo) && $pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
+
     error_log($e->getMessage());
+
     header(
         "Location: index.php?status=error&message=" .
         urlencode("Unable to save your booking. Please try again.")
     );
     exit;
 }
-?>

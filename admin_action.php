@@ -11,37 +11,116 @@ if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'admin') {
 $action = $_GET['action'] ?? '';
 $id     = filter_input(INPUT_GET, 'id', FILTER_VALIDATE_INT);
 
-if (!$id || !in_array($action, ['approve', 'reject'], true)) {
+$allowedActions = [
+    'approve',
+    'reject',
+    'approve_cancel',
+    'reject_cancel',
+    'pickup',
+    'return',
+];
+
+if (!$id || !in_array($action, $allowedActions, true)) {
     header("Location: dashboard.php?status=error&message=" . urlencode("Invalid request."));
     exit;
 }
-
-$newStatus = $action === 'approve' ? 'Approved' : 'Rejected';
 
 try {
 
     $pdo = getConnection();
 
-    $checkStmt = $pdo->prepare("SELECT status, vehicle_id FROM rentals WHERE id = :id LIMIT 1");
-    $checkStmt->execute([':id' => $id]);
-    $booking = $checkStmt->fetch(PDO::FETCH_ASSOC);
+    $stmt = $pdo->prepare("SELECT status, vehicle_id FROM rentals WHERE id = :id LIMIT 1");
+    $stmt->execute([':id' => $id]);
+    $booking = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$booking) {
         header("Location: dashboard.php?status=error&message=" . urlencode("Booking not found."));
         exit;
     }
 
-    $stmt = $pdo->prepare("UPDATE rentals SET status = :status WHERE id = :id");
-    $stmt->execute([
-        ':status' => $newStatus,
-        ':id'     => $id
-    ]);
+    $current = $booking['status'] ?? 'Pending';
+    $message = '';
+
+    switch ($action) {
+
+        case 'approve':
+            if ($current !== 'Pending') {
+                header("Location: dashboard.php?status=error&message=" . urlencode("Only Pending bookings can be approved."));
+                exit;
+            }
+            $upd = $pdo->prepare("UPDATE rentals SET status = 'Approved' WHERE id = :id");
+            $upd->execute([':id' => $id]);
+            $message = 'Booking approved.';
+            break;
+
+        case 'reject':
+            if ($current !== 'Pending') {
+                header("Location: dashboard.php?status=error&message=" . urlencode("Only Pending bookings can be rejected."));
+                exit;
+            }
+            $upd = $pdo->prepare("UPDATE rentals SET status = 'Rejected' WHERE id = :id");
+            $upd->execute([':id' => $id]);
+            $message = 'Booking rejected.';
+            break;
+
+        case 'approve_cancel':
+            if ($current !== 'Cancel Requested') {
+                header("Location: dashboard.php?status=error&message=" . urlencode("Only cancel requests can be approved here."));
+                exit;
+            }
+            $upd = $pdo->prepare("
+                UPDATE rentals
+                SET status             = 'Cancelled',
+                    cancel_decision    = 'Approved',
+                    cancel_decided_at  = NOW()
+                WHERE id = :id
+            ");
+            $upd->execute([':id' => $id]);
+            $message = 'Cancellation approved.';
+            break;
+
+        case 'reject_cancel':
+            if ($current !== 'Cancel Requested') {
+                header("Location: dashboard.php?status=error&message=" . urlencode("Only cancel requests can be rejected here."));
+                exit;
+            }
+            $upd = $pdo->prepare("
+                UPDATE rentals
+                SET status             = 'Approved',
+                    cancel_decision    = 'Rejected',
+                    cancel_decided_at  = NOW()
+                WHERE id = :id
+            ");
+            $upd->execute([':id' => $id]);
+            $message = 'Cancellation rejected. Booking remains approved.';
+            break;
+
+        case 'pickup':
+            if ($current !== 'Approved') {
+                header("Location: dashboard.php?status=error&message=" . urlencode("Only Approved bookings can be marked as Picked Up."));
+                exit;
+            }
+            $upd = $pdo->prepare("UPDATE rentals SET status = 'Picked Up' WHERE id = :id");
+            $upd->execute([':id' => $id]);
+            $message = 'Booking marked as Picked Up.';
+            break;
+
+        case 'return':
+            if ($current !== 'Picked Up') {
+                header("Location: dashboard.php?status=error&message=" . urlencode("Only Picked Up bookings can be marked as Returned."));
+                exit;
+            }
+            $upd = $pdo->prepare("UPDATE rentals SET status = 'Returned' WHERE id = :id");
+            $upd->execute([':id' => $id]);
+            $message = 'Booking marked as Returned.';
+            break;
+    }
 
     if (!empty($booking['vehicle_id'])) {
         syncVehicleStock($pdo, (int)$booking['vehicle_id']);
     }
 
-    header("Location: dashboard.php?status=success&message=" . urlencode("Booking $newStatus."));
+    header("Location: dashboard.php?status=success&message=" . urlencode($message));
     exit;
 
 } catch (PDOException $e) {
@@ -51,4 +130,3 @@ try {
     header("Location: dashboard.php?status=error&message=" . urlencode("Unable to update booking."));
     exit;
 }
-?>

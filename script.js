@@ -6,8 +6,7 @@
 
 const activeUser = window.RCDriveUser || null;
 
-// Booking rule: maximum number of days allowed
-// MUST match MAX_RENTAL_DAYS in config.php
+// Booking rules — MUST match config.php constants
 const MAX_RENTAL_DAYS = 7;
 const MIN_RENTAL_DAYS = 1;
 
@@ -41,6 +40,7 @@ function setupDates() {
                 }
             }
             calculateBookingCost();
+            refreshAvailabilityOnDateChange();
         });
     }
 
@@ -160,10 +160,8 @@ async function loadVehicleAvailability(vehicleName) {
             return;
         }
 
-        const unavailableDates = data.unavailable_dates || [];
-
-        startDate._unavailableDates = unavailableDates;
-        endDate._unavailableDates   = unavailableDates;
+        startDate._unavailableDates   = data.unavailable_dates || [];
+        endDate._unavailableDates     = data.unavailable_dates || [];
 
         startDate._totalStock         = data.total_stock || 0;
         startDate._currentlyAvailable = data.currently_available || 0;
@@ -173,12 +171,16 @@ async function loadVehicleAvailability(vehicleName) {
         console.log("Availability loaded for " + vehicleName + ":", {
             total_stock: data.total_stock,
             currently_available: data.currently_available,
-            unavailable_dates: unavailableDates
+            unavailable_dates: data.unavailable_dates
         });
 
     } catch (error) {
         console.error("Vehicle availability error:", error);
     }
+}
+
+function refreshAvailabilityOnDateChange() {
+    // No-op for now
 }
 
 // ==========================================================
@@ -234,10 +236,6 @@ function setupRentForm() {
             return;
         }
 
-        // ======================================================
-        // ENFORCE MAXIMUM RENTAL DAYS
-        // ======================================================
-
         const daysDiff = calculateDaysBetween(start.value, end.value);
 
         if (daysDiff > MAX_RENTAL_DAYS) {
@@ -249,10 +247,6 @@ function setupRentForm() {
             );
             return;
         }
-
-        // ======================================================
-        // CHECK IF THIS VEHICLE HAS NO AVAILABLE UNITS AT ALL
-        // ======================================================
 
         const totalStock         = start._totalStock || 0;
         const currentlyAvailable = start._currentlyAvailable;
@@ -271,15 +265,11 @@ function setupRentForm() {
             return;
         }
 
-        // ======================================================
-        // CHECK FOR SPECIFIC UNAVAILABLE DATES
-        // ======================================================
-
         const unavailable = start._unavailableDates || [];
 
         if (unavailable.length > 0) {
-            const current      = new Date(start.value + "T00:00:00");
-            const last         = new Date(end.value + "T00:00:00");
+            const current       = new Date(start.value + "T00:00:00");
+            const last          = new Date(end.value + "T00:00:00");
             const conflictDates = [];
 
             while (current <= last) {
@@ -296,17 +286,13 @@ function setupRentForm() {
                 const list = conflictDates.join("\n• ");
 
                 alert(
-                    "Sorry, the " + vehicle.value + " is not available on the following date(s):\n\n" +
+                    "Sorry, the " + vehicle.value + " is fully booked on the following date(s):\n\n" +
                     "• " + list + "\n\n" +
                     "Please select different dates."
                 );
                 return;
             }
         }
-
-        // ======================================================
-        // CONFIRMATION
-        // ======================================================
 
         const total = document.getElementById("calculatedTotal");
         const confirmed = confirm(
