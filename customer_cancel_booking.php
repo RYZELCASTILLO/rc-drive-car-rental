@@ -42,9 +42,8 @@ try {
 
     $pdo = getConnection();
 
-    // Verify booking belongs to this customer and is in a cancellable state
     $stmt = $pdo->prepare("
-        SELECT id, user_id, status, rental_date
+        SELECT id, user_id, status, created_at, rental_date
         FROM rentals
         WHERE id = :id
         LIMIT 1
@@ -59,23 +58,23 @@ try {
 
     $status = $booking['status'] ?? 'Pending';
 
-    // Customers can only request cancellation for Pending or Approved bookings
-    if (!in_array($status, ['Pending', 'Approved'], true)) {
+    /* RULE 1 — Only Pending bookings can be self-cancelled */
+    if ($status !== 'Pending') {
         header(
             "Location: dashboard.php?status=error&message=" .
-            urlencode("This booking cannot be cancelled (current status: $status).")
+            urlencode("This booking can no longer be self-cancelled because it has already been processed. Please chat with us if you still need to cancel.")
         );
         exit;
     }
 
-    // Optional: block requests within 24 hours of pickup
-    $pickupTs  = strtotime($booking['rental_date'] . ' 08:00:00');
-    $hoursLeft = ($pickupTs - time()) / 3600;
+    /* RULE 2 — Only within 2 hours of booking */
+    $createdTs  = strtotime($booking['created_at']);
+    $hoursSince = (time() - $createdTs) / 3600;
 
-    if ($hoursLeft < 24 && $hoursLeft > 0) {
+    if ($hoursSince > 2) {
         header(
             "Location: dashboard.php?status=error&message=" .
-            urlencode("Bookings cannot be cancelled within 24 hours of pickup. Please call +63 930 222 9696.")
+            urlencode("The 2-hour self-cancellation window has passed. Please chat with us and an admin will assist you.")
         );
         exit;
     }

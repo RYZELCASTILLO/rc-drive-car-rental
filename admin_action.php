@@ -18,6 +18,7 @@ $allowedActions = [
     'reject_cancel',
     'pickup',
     'return',
+    'force_cancel',
 ];
 
 if (!$id || !in_array($action, $allowedActions, true)) {
@@ -113,6 +114,23 @@ try {
             $upd = $pdo->prepare("UPDATE rentals SET status = 'Returned' WHERE id = :id");
             $upd->execute([':id' => $id]);
             $message = 'Booking marked as Returned.';
+            break;
+
+        case 'force_cancel':
+            $blockedStatuses = ['Cancelled', 'Returned', 'Rejected'];
+            if (in_array($current, $blockedStatuses, true)) {
+                header("Location: dashboard.php?status=error&message=" . urlencode("This booking is already closed ($current)."));
+                exit;
+            }
+            $upd = $pdo->prepare("
+                UPDATE rentals
+                SET status             = 'Cancelled',
+                    cancel_decision    = 'Approved',
+                    cancel_decided_at  = NOW()
+                WHERE id = :id
+            ");
+            $upd->execute([':id' => $id]);
+            $message = 'Booking cancelled by admin.';
             break;
     }
 

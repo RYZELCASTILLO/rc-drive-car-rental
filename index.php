@@ -394,20 +394,6 @@ function vehicleImage(string $name): string
         <span>Perfect Ride</span>
     </h2>
 
-    <?php if (isset($_SESSION['user_id']) && ($_SESSION['role'] ?? '') === 'customer'): ?>
-
-        <div class="fleet-user-hint">
-            <i class="fa-solid fa-circle-info"></i>
-
-            You're signed in as
-            <strong><?= htmlspecialchars($_SESSION['username']) ?></strong>.
-            Weekend rentals include a 20% surcharge; 7+ day rentals get 10% off.
-
-            <a href="dashboard.php">View your bookings →</a>
-        </div>
-
-    <?php endif; ?>
-
     <div class="fleet-filter">
 
         <button type="button" class="filter-btn active" data-filter="all">ALL</button>

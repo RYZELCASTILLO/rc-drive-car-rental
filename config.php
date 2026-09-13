@@ -1,5 +1,16 @@
 <?php
 
+/* =========================================================================
+   TIMEZONE — Force Philippine Time (Asia/Manila, UTC+8)
+   ========================================================================= */
+
+date_default_timezone_set('Asia/Manila');
+
+
+/* =========================================================================
+   BOOKING RULES
+   ========================================================================= */
+
 define('MAX_RENTAL_DAYS', 7);
 define('MIN_RENTAL_DAYS', 1);
 
@@ -21,6 +32,9 @@ function getConnection()
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
 
+        /* Force MySQL session to use Philippine time too */
+        $pdo->exec("SET time_zone = '+08:00'");
+
         return $pdo;
 
     } catch (PDOException $e) {
@@ -30,10 +44,6 @@ function getConnection()
 }
 
 
-/**
- * Only these statuses hold a vehicle physically.
- * 'Cancel Requested' still holds the unit until admin decides.
- */
 function syncVehicleStock(PDO $pdo, int $vehicleId): void
 {
     $v = $pdo->prepare("SELECT total_units FROM vehicles WHERE id = :id LIMIT 1");
@@ -79,9 +89,6 @@ function syncAllVehicleStock(PDO $pdo): void
 }
 
 
-/**
- * Fee calculation — base rate × days.
- */
 function calculateRentalFee(PDO $pdo, int $vehicleId, string $startDate, string $endDate, int $days): float
 {
     $stmt = $pdo->prepare("SELECT price_per_day FROM vehicles WHERE id = :id LIMIT 1");

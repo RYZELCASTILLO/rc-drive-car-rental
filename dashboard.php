@@ -27,10 +27,6 @@ $email    = $_SESSION['email'] ?? '';
 $userId   = (int) $_SESSION['user_id'];
 
 
-/* =========================================================
-   Helpers
-   ========================================================= */
-
 function buildBrandStats(array $vehicles): array
 {
     $stats = [];
@@ -78,7 +74,6 @@ try {
     $pdo = getConnection();
     syncAllVehicleStock($pdo);
 
-    /* Fleet */
     $vehicleRows = $pdo->query("
         SELECT id, vehicle_name, vehicle_brand, price_per_day, total_units, available_units
         FROM vehicles
@@ -94,9 +89,6 @@ try {
     }
 
 
-    /* =========================================================
-       ADMIN
-    ========================================================= */
     if ($role === 'admin') {
 
         $adminRentals = $pdo->query("
@@ -145,9 +137,6 @@ try {
             $inquiryThreads = [];
         }
 
-    /* =========================================================
-       CUSTOMER
-    ========================================================= */
     } else {
 
         $stmt = $pdo->prepare("
@@ -459,6 +448,32 @@ foreach ($userRentals as $r) {
             background:rgba(253,126,20,0.08);
         }
 
+        .chat-required-box {
+            border-radius: 4px;
+            padding: 16px 18px;
+            font-size: 0.9rem;
+            line-height: 1.6;
+            border-left: 4px solid #FCC113;
+            background: rgba(252, 193, 19, 0.08);
+            color: #e6e6e6;
+        }
+
+        .chat-required-box strong {
+            color: #FCC113;
+            display: block;
+            font-family: 'Montserrat', sans-serif;
+            font-size: 0.85rem;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+        }
+
+        .chat-required-box a {
+            color: #FCC113;
+            font-weight: 800;
+            text-decoration: underline;
+        }
+
         .dash-footer {
             text-align:center; padding:30px 6%; color:#6c757d;
             font-size:0.8rem; border-top:1px solid #222730; margin-top:40px;
@@ -659,6 +674,12 @@ foreach ($userRentals as $r) {
                                        class="dash-action-btn dash-action-reject" title="Reject">
                                         <i class="fa-solid fa-xmark"></i>
                                     </a>
+                                    <a href="admin_action.php?action=force_cancel&id=<?= (int)$rental['id'] ?>"
+                                       class="dash-action-btn dash-action-warn"
+                                       title="Cancel (admin override)"
+                                       onclick="return confirm('Cancel this booking as admin?');">
+                                        <i class="fa-solid fa-ban"></i>
+                                    </a>
 
                                 <?php elseif ($status === 'Approved'): ?>
 
@@ -666,12 +687,24 @@ foreach ($userRentals as $r) {
                                        class="dash-action-btn dash-action-info" title="Mark Picked Up">
                                         <i class="fa-solid fa-key"></i>
                                     </a>
+                                    <a href="admin_action.php?action=force_cancel&id=<?= (int)$rental['id'] ?>"
+                                       class="dash-action-btn dash-action-warn"
+                                       title="Cancel (admin override)"
+                                       onclick="return confirm('Cancel this booking as admin?');">
+                                        <i class="fa-solid fa-ban"></i>
+                                    </a>
 
                                 <?php elseif ($status === 'Picked Up'): ?>
 
                                     <a href="admin_action.php?action=return&id=<?= (int)$rental['id'] ?>"
                                        class="dash-action-btn dash-action-approve" title="Mark Returned">
                                         <i class="fa-solid fa-rotate-left"></i>
+                                    </a>
+                                    <a href="admin_action.php?action=force_cancel&id=<?= (int)$rental['id'] ?>"
+                                       class="dash-action-btn dash-action-warn"
+                                       title="Cancel (admin override)"
+                                       onclick="return confirm('Cancel this booking as admin? The vehicle has already been picked up.');">
+                                        <i class="fa-solid fa-ban"></i>
                                     </a>
 
                                 <?php elseif ($status === 'Cancel Requested'): ?>
@@ -863,7 +896,15 @@ foreach ($userRentals as $r) {
                         $status     = $rental['status'] ?? 'Pending';
                         $badgeClass = statusBadgeClass($status);
 
-                        $canCancel = in_array($status, ['Pending', 'Approved'], true);
+                        $createdTs    = isset($rental['created_at']) ? strtotime($rental['created_at']) : 0;
+                        $hoursSince   = $createdTs > 0 ? (time() - $createdTs) / 3600 : 9999;
+                        $withinWindow = $hoursSince <= 2;
+
+                        // Can the customer open the modal?
+                        $canSelfCancel = ($status === 'Pending' && $withinWindow);
+
+                        // Can the customer click the button at all? (Pending or Approved)
+                        $showButton = in_array($status, ['Pending', 'Approved'], true);
 
                         $reason = '';
                         if ($status === 'Cancel Requested') {
@@ -890,7 +931,9 @@ foreach ($userRentals as $r) {
                                 <?= $reason ? htmlspecialchars($reason) : '—' ?>
                             </td>
                             <td>
-                                <?php if ($canCancel): ?>
+                                <?php if ($canSelfCancel): ?>
+
+                                    <!-- Within 2h + Pending → opens the cancel modal -->
                                     <button
                                         type="button"
                                         class="dash-action-btn dash-action-reject"
@@ -902,10 +945,29 @@ foreach ($userRentals as $r) {
                                     >
                                         <i class="fa-solid fa-ban"></i>
                                     </button>
+
+                                <?php elseif ($showButton): ?>
+
+                                    <!-- After 2h or Approved → shows chat notice -->
+                                    <button
+                                        type="button"
+                                        class="dash-action-btn dash-action-reject"
+                                        title="Cannot self-cancel — chat with support"
+                                        onclick="showChatRequired(
+                                            '<?= htmlspecialchars($rental['vehicle_type'] ?? 'this vehicle', ENT_QUOTES) ?>'
+                                        )"
+                                    >
+                                        <i class="fa-solid fa-ban"></i>
+                                    </button>
+
                                 <?php elseif ($status === 'Cancel Requested'): ?>
+
                                     <span class="dash-action-processed">Waiting for admin</span>
+
                                 <?php else: ?>
+
                                     <span class="dash-action-processed">—</span>
+
                                 <?php endif; ?>
                             </td>
                         </tr>
@@ -1083,6 +1145,57 @@ foreach ($userRentals as $r) {
 </div>
 
 
+<!-- ============================================================
+     CHAT-REQUIRED MODAL (shown when self-cancel window has passed)
+     ============================================================ -->
+<div class="modal fade" id="chatRequiredModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content bg-dark text-white border-warning">
+
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title text-warning">
+                    <i class="fa-solid fa-circle-info"></i> Please Chat With Us Instead
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+
+            <div class="modal-body">
+
+                <div class="chat-required-box mb-3">
+                    <strong>Self-Cancellation Not Available</strong>
+                    The 2-hour self-cancellation window for
+                    <span id="chatVehicleName" style="color:#FCC113; font-weight:800;">this booking</span>
+                    has passed, or the booking has already been approved by an admin.
+                </div>
+
+                <p style="color:#a0a5b1; font-size:0.9rem; margin-bottom:14px;">
+                    If you still need to cancel, please reach out to our support team using the
+                    <strong style="color:#FCC113;">"My Conversations with RC Drive"</strong>
+                    section below this table. An admin will review your request and cancel the booking on your behalf.
+                </p>
+
+                <p style="color:#a0a5b1; font-size:0.85rem; margin-bottom:0;">
+                    <i class="fa-solid fa-lightbulb" style="color:#FCC113;"></i>
+                    Tip: Send a message like <em>"I need to cancel booking #your-booking-id due to [reason]"</em>
+                    so our team can find it quickly.
+                </p>
+
+            </div>
+
+            <div class="modal-footer border-secondary">
+                <button type="button" class="dash-btn dash-btn-outline" data-bs-dismiss="modal">
+                    Close
+                </button>
+                <button type="button" class="dash-btn dash-btn-yellow" id="scrollToChatBtn">
+                    <i class="fa-solid fa-comments"></i> Go to Chat
+                </button>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
 <script>
@@ -1113,9 +1226,20 @@ foreach ($userRentals as $r) {
         modal.show();
     }
 
+    function showChatRequired(vehicleName) {
+        var modal = bootstrap.Modal.getOrCreateInstance(
+            document.getElementById('chatRequiredModal')
+        );
+
+        document.getElementById('chatVehicleName').textContent = vehicleName;
+
+        modal.show();
+    }
+
     document.addEventListener('DOMContentLoaded', function () {
+
         var reasonSel = document.getElementById('cancelReason');
-        var otherWrap = document.getElementById('otherReasonWrap');
+        var otherWrap = document.getElementById('reasonOtherWrap');
 
         if (reasonSel) {
             reasonSel.addEventListener('change', function () {
@@ -1123,6 +1247,24 @@ foreach ($userRentals as $r) {
                     otherWrap.style.display = 'block';
                 } else {
                     otherWrap.style.display = 'none';
+                }
+            });
+        }
+
+        var scrollBtn = document.getElementById('scrollToChatBtn');
+        if (scrollBtn) {
+            scrollBtn.addEventListener('click', function () {
+                var modalEl = document.getElementById('chatRequiredModal');
+                var modalInstance = bootstrap.Modal.getInstance(modalEl);
+                if (modalInstance) modalInstance.hide();
+
+                var chatSection = document.querySelector('.conv-list') ||
+                                  document.querySelector('[id^="inquiry-"]');
+
+                if (chatSection) {
+                    setTimeout(function () {
+                        chatSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }, 300);
                 }
             });
         }
