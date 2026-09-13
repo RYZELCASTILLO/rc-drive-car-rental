@@ -17,7 +17,6 @@ $allowedActions = [
     'approve_cancel',
     'reject_cancel',
     'pickup',
-    'return',
     'force_cancel',
 ];
 
@@ -51,7 +50,7 @@ try {
             }
             $upd = $pdo->prepare("UPDATE rentals SET status = 'Approved' WHERE id = :id");
             $upd->execute([':id' => $id]);
-            $message = 'Booking approved.';
+            $message = 'Booking approved. Customer will pick up at RC Drive, Dumaguete City.';
             break;
 
         case 'reject':
@@ -104,16 +103,6 @@ try {
             $upd = $pdo->prepare("UPDATE rentals SET status = 'Picked Up' WHERE id = :id");
             $upd->execute([':id' => $id]);
             $message = 'Booking marked as Picked Up.';
-            break;
-
-        case 'return':
-            if ($current !== 'Picked Up') {
-                header("Location: dashboard.php?status=error&message=" . urlencode("Only Picked Up bookings can be marked as Returned."));
-                exit;
-            }
-            $upd = $pdo->prepare("UPDATE rentals SET status = 'Returned' WHERE id = :id");
-            $upd->execute([':id' => $id]);
-            $message = 'Booking marked as Returned.';
             break;
 
         case 'force_cancel':

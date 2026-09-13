@@ -58,7 +58,6 @@ try {
 
     $status = $booking['status'] ?? 'Pending';
 
-    /* RULE 1 — Only Pending bookings can be self-cancelled */
     if ($status !== 'Pending') {
         header(
             "Location: dashboard.php?status=error&message=" .
@@ -67,7 +66,6 @@ try {
         exit;
     }
 
-    /* RULE 2 — Only within 2 hours of booking */
     $createdTs  = strtotime($booking['created_at']);
     $hoursSince = (time() - $createdTs) / 3600;
 

@@ -14,6 +14,9 @@ date_default_timezone_set('Asia/Manila');
 define('MAX_RENTAL_DAYS', 7);
 define('MIN_RENTAL_DAYS', 1);
 
+/* Flat late fee per day */
+define('LATE_FEE_PER_DAY', 1000);
+
 
 function getConnection()
 {
@@ -32,7 +35,6 @@ function getConnection()
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
 
-        /* Force MySQL session to use Philippine time too */
         $pdo->exec("SET time_zone = '+08:00'");
 
         return $pdo;
@@ -100,4 +102,20 @@ function calculateRentalFee(PDO $pdo, int $vehicleId, string $startDate, string 
     }
 
     return round($dailyRate * max(1, $days), 2);
+}
+
+
+/**
+ * Flat late fee: ₱1,000 per day late.
+ *
+ * @param int $lateDays  Number of full days late (0 if on time)
+ * @return float
+ */
+function calculateLateFee(int $lateDays): float
+{
+    if ($lateDays <= 0) {
+        return 0.0;
+    }
+
+    return round($lateDays * LATE_FEE_PER_DAY, 2);
 }

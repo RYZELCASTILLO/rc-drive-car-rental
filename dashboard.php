@@ -95,7 +95,8 @@ try {
             SELECT
                 r.*,
                 COALESCE(u.username, r.customer_name) AS username,
-                v.vehicle_name
+                v.vehicle_name,
+                v.price_per_day
             FROM rentals r
             LEFT JOIN users u ON r.user_id = u.id
             LEFT JOIN vehicles v ON r.vehicle_id = v.id
@@ -193,6 +194,14 @@ foreach ($userRentals as $r) {
         $custPending++;
     } elseif (in_array($s, ['Rejected', 'Cancelled'], true)) {
         $custRejected++;
+    }
+}
+
+$hasApprovedBooking = false;
+foreach ($userRentals as $r) {
+    if (($r['status'] ?? '') === 'Approved') {
+        $hasApprovedBooking = true;
+        break;
     }
 }
 ?>
@@ -448,30 +457,61 @@ foreach ($userRentals as $r) {
             background:rgba(253,126,20,0.08);
         }
 
-        .chat-required-box {
+        .pickup-info-banner {
+            background: rgba(40,167,69,0.08);
+            border: 1px solid rgba(40,167,69,0.4);
+            border-left: 4px solid #28a745;
             border-radius: 4px;
-            padding: 16px 18px;
-            font-size: 0.9rem;
-            line-height: 1.6;
-            border-left: 4px solid #FCC113;
-            background: rgba(252, 193, 19, 0.08);
-            color: #e6e6e6;
+            padding: 20px 24px;
+            margin-bottom: 24px;
         }
 
-        .chat-required-box strong {
-            color: #FCC113;
-            display: block;
+        .pickup-info-banner h4 {
             font-family: 'Montserrat', sans-serif;
-            font-size: 0.85rem;
-            letter-spacing: 0.5px;
-            margin-bottom: 8px;
+            font-weight: 900;
+            color: #28a745;
+            font-size: 0.95rem;
+            letter-spacing: 1px;
             text-transform: uppercase;
+            margin: 0 0 12px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
 
-        .chat-required-box a {
-            color: #FCC113;
+        .pickup-info-banner p {
+            color: #d4d8dd;
+            font-size: 0.9rem;
+            margin-bottom: 10px;
+            line-height: 1.6;
+        }
+
+        .pickup-info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 16px;
+            margin-top: 16px;
+        }
+
+        .pickup-info-grid .info-label {
+            font-family: 'Montserrat', sans-serif;
+            font-size: 0.7rem;
             font-weight: 800;
-            text-decoration: underline;
+            color: #8a8f9d;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 4px;
+        }
+
+        .pickup-info-grid .info-value {
+            color: #ffffff;
+            font-size: 0.88rem;
+            line-height: 1.5;
+        }
+
+        .pickup-info-grid .info-value i {
+            color: #FCC113;
+            margin-right: 4px;
         }
 
         .dash-footer {
@@ -532,6 +572,64 @@ foreach ($userRentals as $r) {
             <i class="fa-solid fa-circle-exclamation"></i>
             <?= htmlspecialchars($dbError) ?>
         </div>
+    <?php endif; ?>
+
+    <!-- PICKUP REMINDER FOR CUSTOMER -->
+    <?php if ($role === 'customer' && $hasApprovedBooking): ?>
+
+        <div class="pickup-info-banner">
+
+            <h4>
+                <i class="fa-solid fa-circle-check"></i>
+                Your booking is ready for pickup
+            </h4>
+
+            <p>
+                Please come to our shop to collect your vehicle. Bring your
+                <strong style="color:#FCC113;">driver's license</strong> and a
+                <strong style="color:#FCC113;">valid government ID</strong>.
+            </p>
+
+            <div class="pickup-info-grid">
+
+                <div>
+                    <div class="info-label">Our Location</div>
+                    <div class="info-value">
+                        <i class="fa-solid fa-location-dot"></i>
+                        RC Drive Car Rental Services<br>
+                        123 Rizal Boulevard<br>
+                        Dumaguete City, Negros Oriental
+                    </div>
+                </div>
+
+                <div>
+                    <div class="info-label">Operating Hours</div>
+                    <div class="info-value">
+                        <i class="fa-solid fa-clock"></i>
+                        Monday – Sunday<br>
+                        7:00 AM – 9:00 PM
+                    </div>
+                </div>
+
+                <div>
+                    <div class="info-label">Contact</div>
+                    <div class="info-value">
+                        <i class="fa-solid fa-phone"></i>
+                        +63 930 222 9696<br>
+                        <i class="fa-solid fa-envelope"></i>
+                        support@rcdrive.com
+                    </div>
+                </div>
+
+            </div>
+
+            <p style="color:#a0a5b1; font-size:0.8rem; margin-top:16px; margin-bottom:0;">
+                <i class="fa-solid fa-triangle-exclamation" style="color:#FCC113;"></i>
+                If you do not claim your vehicle within 4 hours of your pickup date, your reservation may be released.
+            </p>
+
+        </div>
+
     <?php endif; ?>
 
     <div class="dash-page-title">
@@ -659,6 +757,12 @@ foreach ($userRentals as $r) {
                             </td>
                             <td>
                                 <span class="dash-badge <?= $badgeClass ?>"><?= htmlspecialchars($status) ?></span>
+                                <?php if (!empty($rental['late_days']) && (int)$rental['late_days'] > 0): ?>
+                                    <div style="font-size:0.72rem; color:#ff5560; margin-top:4px;">
+                                        <i class="fa-solid fa-clock"></i>
+                                        <?= (int)$rental['late_days'] ?> day(s) late
+                                    </div>
+                                <?php endif; ?>
                             </td>
                             <td>
                                 <?= $reason ? htmlspecialchars($reason) : '—' ?>
@@ -696,10 +800,17 @@ foreach ($userRentals as $r) {
 
                                 <?php elseif ($status === 'Picked Up'): ?>
 
-                                    <a href="admin_action.php?action=return&id=<?= (int)$rental['id'] ?>"
-                                       class="dash-action-btn dash-action-approve" title="Mark Returned">
+                                    <button type="button"
+                                            class="dash-action-btn dash-action-approve"
+                                            title="Mark Returned"
+                                            onclick="openReturnModal(
+                                                <?= (int)$rental['id'] ?>,
+                                                '<?= htmlspecialchars($rental['vehicle_type'] ?? '', ENT_QUOTES) ?>',
+                                                '<?= htmlspecialchars($rental['return_date'] ?? '', ENT_QUOTES) ?>',
+                                                <?= (float)($rental['total_fee'] ?? 0) ?>
+                                            )">
                                         <i class="fa-solid fa-rotate-left"></i>
-                                    </a>
+                                    </button>
                                     <a href="admin_action.php?action=force_cancel&id=<?= (int)$rental['id'] ?>"
                                        class="dash-action-btn dash-action-warn"
                                        title="Cancel (admin override)"
@@ -720,7 +831,13 @@ foreach ($userRentals as $r) {
 
                                 <?php else: ?>
 
-                                    <span class="dash-action-processed">Processed</span>
+                                    <?php if (!empty($rental['late_fee']) && (float)$rental['late_fee'] > 0): ?>
+                                        <span class="dash-action-processed">
+                                            Late fee: ₱<?= number_format((float)$rental['late_fee'], 0) ?>
+                                        </span>
+                                    <?php else: ?>
+                                        <span class="dash-action-processed">Processed</span>
+                                    <?php endif; ?>
 
                                 <?php endif; ?>
                             </td>
@@ -900,11 +1017,8 @@ foreach ($userRentals as $r) {
                         $hoursSince   = $createdTs > 0 ? (time() - $createdTs) / 3600 : 9999;
                         $withinWindow = $hoursSince <= 2;
 
-                        // Can the customer open the modal?
                         $canSelfCancel = ($status === 'Pending' && $withinWindow);
-
-                        // Can the customer click the button at all? (Pending or Approved)
-                        $showButton = in_array($status, ['Pending', 'Approved'], true);
+                        $showButton    = in_array($status, ['Pending', 'Approved'], true);
 
                         $reason = '';
                         if ($status === 'Cancel Requested') {
@@ -921,11 +1035,27 @@ foreach ($userRentals as $r) {
                             <td><?= htmlspecialchars($rental['rental_date']) ?></td>
                             <td><?= htmlspecialchars($rental['return_date']) ?></td>
                             <td><?= htmlspecialchars($rental['payment_method'] ?? 'N/A') ?></td>
-                            <td class="dash-money">₱<?= number_format((float)$rental['total_fee'], 2) ?></td>
+                            <td class="dash-money">
+                                ₱<?= number_format((float)$rental['total_fee'], 2) ?>
+
+                                <?php if (!empty($rental['late_fee']) && (float)$rental['late_fee'] > 0): ?>
+                                    <div style="font-size:0.72rem; color:#ff5560; margin-top:4px; font-family:'Segoe UI',sans-serif; font-weight:600;">
+                                        <i class="fa-solid fa-triangle-exclamation"></i>
+                                        Incl. late fee ₱<?= number_format((float)$rental['late_fee'], 0) ?>
+                                    </div>
+                                <?php endif; ?>
+                            </td>
                             <td>
                                 <span class="dash-badge <?= $badgeClass ?>">
                                     <?= htmlspecialchars($status) ?>
                                 </span>
+
+                                <?php if (!empty($rental['late_days']) && (int)$rental['late_days'] > 0): ?>
+                                    <div style="font-size:0.72rem; color:#ff5560; margin-top:4px;">
+                                        <i class="fa-solid fa-clock"></i>
+                                        <?= (int)$rental['late_days'] ?> day(s) late
+                                    </div>
+                                <?php endif; ?>
                             </td>
                             <td>
                                 <?= $reason ? htmlspecialchars($reason) : '—' ?>
@@ -933,7 +1063,6 @@ foreach ($userRentals as $r) {
                             <td>
                                 <?php if ($canSelfCancel): ?>
 
-                                    <!-- Within 2h + Pending → opens the cancel modal -->
                                     <button
                                         type="button"
                                         class="dash-action-btn dash-action-reject"
@@ -948,16 +1077,15 @@ foreach ($userRentals as $r) {
 
                                 <?php elseif ($showButton): ?>
 
-                                    <!-- After 2h or Approved → shows chat notice -->
                                     <button
                                         type="button"
-                                        class="dash-action-btn dash-action-reject"
-                                        title="Cannot self-cancel — chat with support"
-                                        onclick="showChatRequired(
+                                        class="dash-action-btn dash-action-approve"
+                                        title="View booking instructions"
+                                        onclick="showApprovedNotice(
                                             '<?= htmlspecialchars($rental['vehicle_type'] ?? 'this vehicle', ENT_QUOTES) ?>'
                                         )"
                                     >
-                                        <i class="fa-solid fa-ban"></i>
+                                        <i class="fa-solid fa-circle-info"></i>
                                     </button>
 
                                 <?php elseif ($status === 'Cancel Requested'): ?>
@@ -1078,6 +1206,89 @@ foreach ($userRentals as $r) {
 
 
 <!-- ============================================================
+     RETURN VEHICLE MODAL (admin only)
+     ============================================================ -->
+<div class="modal fade" id="returnVehicleModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content bg-dark text-white border-warning">
+
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title text-warning">
+                    <i class="fa-solid fa-rotate-left"></i> Record Vehicle Return
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+
+            <form action="return_vehicle.php" method="POST">
+                <input type="hidden" name="id" id="returnRentalId">
+
+                <div class="modal-body">
+
+                    <div style="background:rgba(252,193,19,0.08); border-left:4px solid #FCC113; border-radius:4px; padding:14px 16px; margin-bottom:18px;">
+                        <div style="font-family:'Montserrat',sans-serif; font-size:0.7rem; font-weight:800; color:#FCC113; text-transform:uppercase; letter-spacing:1px; margin-bottom:6px;">
+                            Vehicle
+                        </div>
+                        <div id="returnVehicleName" style="font-weight:800; color:#fff; margin-bottom:8px;">
+                            —
+                        </div>
+                        <div style="font-size:0.82rem; color:#a0a5b1; line-height:1.5;">
+                            Agreed return date:
+                            <strong id="returnAgreedDate" style="color:#FCC113;">—</strong>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">
+                            Actual Return Date <span style="color:#ff5560;">*</span>
+                        </label>
+                        <input type="date"
+                               name="actual_return_date"
+                               id="actualReturnDate"
+                               class="form-control bg-secondary text-white border-0"
+                               required>
+                    </div>
+
+                    <div id="lateFeePreview" style="display:none; background:rgba(220,53,69,0.1); border-left:4px solid #dc3545; border-radius:4px; padding:14px 16px;">
+                        <div style="font-family:'Montserrat',sans-serif; font-size:0.7rem; font-weight:800; color:#ff5560; text-transform:uppercase; letter-spacing:1px; margin-bottom:6px;">
+                            Late Return Penalty
+                        </div>
+                        <div style="font-size:0.88rem; color:#ff8590; line-height:1.7;">
+                            <div>Late by <strong id="previewLateDays" style="color:#fff;">0</strong> day(s)</div>
+                            <div style="margin-top:8px;">
+                                Late fee: <strong id="previewLateFee" style="color:#fff;">₱0.00</strong>
+                                <span style="color:#8a8f9d; font-size:0.78rem;">(₱1,000/day)</span>
+                            </div>
+                            <div>
+                                New total: <strong id="previewNewTotal" style="color:#fff;">₱0.00</strong>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="onTimeMessage" style="display:none; background:rgba(40,167,69,0.1); border-left:4px solid #28a745; border-radius:4px; padding:14px 16px;">
+                        <div style="font-size:0.88rem; color:#7eec9a; line-height:1.6;">
+                            <i class="fa-solid fa-circle-check"></i>
+                            Returned on time. No late fee.
+                        </div>
+                    </div>
+
+                </div>
+
+                <div class="modal-footer border-secondary">
+                    <button type="button" class="dash-btn dash-btn-outline" data-bs-dismiss="modal">
+                        Cancel
+                    </button>
+                    <button type="submit" class="dash-btn dash-btn-yellow">
+                        <i class="fa-solid fa-check"></i> Confirm Return
+                    </button>
+                </div>
+            </form>
+
+        </div>
+    </div>
+</div>
+
+
+<!-- ============================================================
      CANCEL REQUEST MODAL
      ============================================================ -->
 <div class="modal fade" id="cancelBookingModal" tabindex="-1">
@@ -1146,48 +1357,99 @@ foreach ($userRentals as $r) {
 
 
 <!-- ============================================================
-     CHAT-REQUIRED MODAL (shown when self-cancel window has passed)
+     APPROVED NOTICE MODAL
      ============================================================ -->
-<div class="modal fade" id="chatRequiredModal" tabindex="-1">
+<div class="modal fade" id="approvedNoticeModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content bg-dark text-white border-warning">
+        <div class="modal-content bg-dark text-white" style="border:2px solid #28a745; border-radius:6px;">
 
-            <div class="modal-header border-secondary">
-                <h5 class="modal-title text-warning">
-                    <i class="fa-solid fa-circle-info"></i> Please Chat With Us Instead
+            <div class="modal-header" style="border-bottom:1px solid #222730;">
+                <h5 class="modal-title" style="color:#28a745; font-family:'Montserrat',sans-serif; font-weight:900;">
+                    <i class="fa-solid fa-circle-check"></i> Reservation Approved
                 </h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
 
             <div class="modal-body">
 
-                <div class="chat-required-box mb-3">
-                    <strong>Self-Cancellation Not Available</strong>
-                    The 2-hour self-cancellation window for
-                    <span id="chatVehicleName" style="color:#FCC113; font-weight:800;">this booking</span>
-                    has passed, or the booking has already been approved by an admin.
+                <div style="background:rgba(40,167,69,0.1); border-left:4px solid #28a745; border-radius:4px; padding:16px 18px; margin-bottom:18px;">
+                    <div style="font-family:'Montserrat',sans-serif; font-size:0.8rem; font-weight:900; color:#28a745; text-transform:uppercase; letter-spacing:1px; margin-bottom:8px;">
+                        Your booking is confirmed
+                    </div>
+                    <div style="font-size:0.9rem; color:#d4d8dd; line-height:1.6;">
+                        Your reservation for
+                        <strong id="approvedVehicleName" style="color:#FCC113;">this vehicle</strong>
+                        has been approved by our team. Please contact the admin to confirm your pickup schedule.
+                    </div>
                 </div>
 
-                <p style="color:#a0a5b1; font-size:0.9rem; margin-bottom:14px;">
-                    If you still need to cancel, please reach out to our support team using the
-                    <strong style="color:#FCC113;">"My Conversations with RC Drive"</strong>
-                    section below this table. An admin will review your request and cancel the booking on your behalf.
+                <p style="color:#a0a5b1; font-size:0.88rem; margin-bottom:16px;">
+                    Reach us through any of the following:
                 </p>
 
-                <p style="color:#a0a5b1; font-size:0.85rem; margin-bottom:0;">
-                    <i class="fa-solid fa-lightbulb" style="color:#FCC113;"></i>
-                    Tip: Send a message like <em>"I need to cancel booking #your-booking-id due to [reason]"</em>
-                    so our team can find it quickly.
+                <div style="display:grid; gap:12px; margin-bottom:18px;">
+
+                    <div style="background:#12161c; border:1px solid #222730; border-radius:4px; padding:14px 16px; display:flex; align-items:center; gap:14px;">
+                        <div style="flex:0 0 42px; width:42px; height:42px; background:rgba(252,193,19,0.1); border-radius:4px; display:flex; align-items:center; justify-content:center; color:#FCC113; font-size:1.1rem;">
+                            <i class="fa-solid fa-phone"></i>
+                        </div>
+                        <div>
+                            <div style="font-family:'Montserrat',sans-serif; font-size:0.7rem; font-weight:800; color:#8a8f9d; text-transform:uppercase; letter-spacing:1px; margin-bottom:2px;">
+                                Phone
+                            </div>
+                            <a href="tel:+639302229696" style="color:#FCC113; font-weight:800; text-decoration:none; font-size:0.95rem;">
+                                +63 930 222 9696
+                            </a>
+                        </div>
+                    </div>
+
+                    <div style="background:#12161c; border:1px solid #222730; border-radius:4px; padding:14px 16px; display:flex; align-items:center; gap:14px;">
+                        <div style="flex:0 0 42px; width:42px; height:42px; background:rgba(252,193,19,0.1); border-radius:4px; display:flex; align-items:center; justify-content:center; color:#FCC113; font-size:1.1rem;">
+                            <i class="fa-solid fa-envelope"></i>
+                        </div>
+                        <div>
+                            <div style="font-family:'Montserrat',sans-serif; font-size:0.7rem; font-weight:800; color:#8a8f9d; text-transform:uppercase; letter-spacing:1px; margin-bottom:2px;">
+                                Email
+                            </div>
+                            <a href="mailto:support@rcdrive.com" style="color:#FCC113; font-weight:800; text-decoration:none; font-size:0.95rem;">
+                                support@rcdrive.com
+                            </a>
+                        </div>
+                    </div>
+
+                    <div style="background:#12161c; border:1px solid #222730; border-radius:4px; padding:14px 16px; display:flex; align-items:center; gap:14px;">
+                        <div style="flex:0 0 42px; width:42px; height:42px; background:rgba(252,193,19,0.1); border-radius:4px; display:flex; align-items:center; justify-content:center; color:#FCC113; font-size:1.1rem;">
+                            <i class="fa-solid fa-comments"></i>
+                        </div>
+                        <div>
+                            <div style="font-family:'Montserrat',sans-serif; font-size:0.7rem; font-weight:800; color:#8a8f9d; text-transform:uppercase; letter-spacing:1px; margin-bottom:2px;">
+                                Chat Box
+                            </div>
+                            <div style="color:#d4d8dd; font-size:0.88rem;">
+                                Use the
+                                <strong style="color:#FCC113;">"My Conversations with RC Drive"</strong>
+                                section below
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+
+                <p style="color:#a0a5b1; font-size:0.82rem; margin-bottom:0; line-height:1.6;">
+                    <i class="fa-solid fa-location-dot" style="color:#FCC113;"></i>
+                    Pickup at: <strong style="color:#fff;">123 Rizal Boulevard, Dumaguete City</strong><br>
+                    <i class="fa-solid fa-clock" style="color:#FCC113;"></i>
+                    Open daily: <strong style="color:#fff;">7:00 AM – 9:00 PM</strong>
                 </p>
 
             </div>
 
-            <div class="modal-footer border-secondary">
+            <div class="modal-footer" style="border-top:1px solid #222730;">
                 <button type="button" class="dash-btn dash-btn-outline" data-bs-dismiss="modal">
                     Close
                 </button>
                 <button type="button" class="dash-btn dash-btn-yellow" id="scrollToChatBtn">
-                    <i class="fa-solid fa-comments"></i> Go to Chat
+                    <i class="fa-solid fa-comments"></i> Go to Chat Box
                 </button>
             </div>
 
@@ -1226,20 +1488,76 @@ foreach ($userRentals as $r) {
         modal.show();
     }
 
-    function showChatRequired(vehicleName) {
+    function showApprovedNotice(vehicleName) {
         var modal = bootstrap.Modal.getOrCreateInstance(
-            document.getElementById('chatRequiredModal')
+            document.getElementById('approvedNoticeModal')
         );
 
-        document.getElementById('chatVehicleName').textContent = vehicleName;
+        document.getElementById('approvedVehicleName').textContent = vehicleName;
 
         modal.show();
+    }
+
+    function openReturnModal(rentalId, vehicleName, agreedDate, currentTotal) {
+        var modal = bootstrap.Modal.getOrCreateInstance(
+            document.getElementById('returnVehicleModal')
+        );
+
+        document.getElementById('returnRentalId').value = rentalId;
+        document.getElementById('returnVehicleName').textContent = vehicleName;
+        document.getElementById('returnAgreedDate').textContent = agreedDate;
+
+        var today = new Date().toISOString().split('T')[0];
+        var actualInput = document.getElementById('actualReturnDate');
+        actualInput.value = today;
+        actualInput.min = agreedDate;
+
+        actualInput._agreedDate   = agreedDate;
+        actualInput._currentTotal = parseFloat(currentTotal) || 0;
+
+        document.getElementById('lateFeePreview').style.display = 'none';
+        document.getElementById('onTimeMessage').style.display = 'none';
+
+        updateLateFeePreview();
+        modal.show();
+    }
+
+    function updateLateFeePreview() {
+        var input  = document.getElementById('actualReturnDate');
+        var agreed = input._agreedDate;
+        var total  = input._currentTotal || 0;
+        var actual = input.value;
+
+        if (!agreed || !actual) return;
+
+        var agreedDate = new Date(agreed + 'T00:00:00');
+        var actualDate = new Date(actual + 'T00:00:00');
+
+        var daysLate = 0;
+        if (actualDate > agreedDate) {
+            daysLate = Math.round((actualDate - agreedDate) / (1000 * 60 * 60 * 24));
+        }
+
+        if (daysLate > 0) {
+            var lateFee = daysLate * 1000;
+            document.getElementById('previewLateDays').textContent = daysLate;
+            document.getElementById('previewLateFee').textContent =
+                '₱' + lateFee.toLocaleString('en-PH', { minimumFractionDigits: 2 });
+            document.getElementById('previewNewTotal').textContent =
+                '₱' + (total + lateFee).toLocaleString('en-PH', { minimumFractionDigits: 2 });
+
+            document.getElementById('lateFeePreview').style.display = 'block';
+            document.getElementById('onTimeMessage').style.display = 'none';
+        } else {
+            document.getElementById('lateFeePreview').style.display = 'none';
+            document.getElementById('onTimeMessage').style.display = 'block';
+        }
     }
 
     document.addEventListener('DOMContentLoaded', function () {
 
         var reasonSel = document.getElementById('cancelReason');
-        var otherWrap = document.getElementById('reasonOtherWrap');
+        var otherWrap = document.getElementById('otherReasonWrap');
 
         if (reasonSel) {
             reasonSel.addEventListener('change', function () {
@@ -1251,10 +1569,15 @@ foreach ($userRentals as $r) {
             });
         }
 
+        var actualReturn = document.getElementById('actualReturnDate');
+        if (actualReturn) {
+            actualReturn.addEventListener('change', updateLateFeePreview);
+        }
+
         var scrollBtn = document.getElementById('scrollToChatBtn');
         if (scrollBtn) {
             scrollBtn.addEventListener('click', function () {
-                var modalEl = document.getElementById('chatRequiredModal');
+                var modalEl = document.getElementById('approvedNoticeModal');
                 var modalInstance = bootstrap.Modal.getInstance(modalEl);
                 if (modalInstance) modalInstance.hide();
 
