@@ -8,15 +8,33 @@ date_default_timezone_set('Asia/Manila');
 
 
 /* =========================================================================
+   COMPANY INFO — Centralized so we never hardcode these again
+   ========================================================================= */
+
+define('COMPANY_NAME',    'RC Drive Car Rental Services');
+define('COMPANY_PHONE',   '+63 930 222 9696');
+define('COMPANY_EMAIL',   'support@rcdrive.com');
+define('COMPANY_ADDRESS', '123 Rizal Boulevard, Dumaguete City, Negros Oriental');
+define('COMPANY_HOURS',   'Monday – Sunday, 7:00 AM – 9:00 PM');
+
+
+/* =========================================================================
    BOOKING RULES
    ========================================================================= */
 
 define('MAX_RENTAL_DAYS', 7);
 define('MIN_RENTAL_DAYS', 1);
 
-/* Flat late fee per day */
 define('LATE_FEE_PER_DAY', 1000);
+define('CANCEL_WINDOW_HOURS', 2);
+define('MAX_CHAT_MESSAGE_LENGTH', 2000);
 
+define('SESSION_TIMEOUT_SECONDS', 1800); // 30 minutes of inactivity
+
+
+/* =========================================================================
+   DATABASE
+   ========================================================================= */
 
 function getConnection()
 {
@@ -45,6 +63,38 @@ function getConnection()
     }
 }
 
+
+/* =========================================================================
+   SESSION TIMEOUT — Fix #5
+   Call session_timeout_check() at the top of every authenticated page.
+   ========================================================================= */
+
+function session_timeout_check(): void
+{
+    if (!isset($_SESSION['user_id'])) {
+        return;
+    }
+
+    $now = time();
+
+    if (isset($_SESSION['last_activity']) &&
+        ($now - $_SESSION['last_activity']) > SESSION_TIMEOUT_SECONDS) {
+
+        $_SESSION = [];
+        session_destroy();
+
+        header("Location: index.php?status=error&message=" .
+               urlencode("Your session expired due to inactivity. Please login again."));
+        exit;
+    }
+
+    $_SESSION['last_activity'] = $now;
+}
+
+
+/* =========================================================================
+   VEHICLE STOCK
+   ========================================================================= */
 
 function syncVehicleStock(PDO $pdo, int $vehicleId): void
 {
@@ -91,6 +141,10 @@ function syncAllVehicleStock(PDO $pdo): void
 }
 
 
+/* =========================================================================
+   PRICING
+   ========================================================================= */
+
 function calculateRentalFee(PDO $pdo, int $vehicleId, string $startDate, string $endDate, int $days): float
 {
     $stmt = $pdo->prepare("SELECT price_per_day FROM vehicles WHERE id = :id LIMIT 1");
@@ -105,12 +159,6 @@ function calculateRentalFee(PDO $pdo, int $vehicleId, string $startDate, string 
 }
 
 
-/**
- * Flat late fee: ₱1,000 per day late.
- *
- * @param int $lateDays  Number of full days late (0 if on time)
- * @return float
- */
 function calculateLateFee(int $lateDays): float
 {
     if ($lateDays <= 0) {
@@ -118,4 +166,63 @@ function calculateLateFee(int $lateDays): float
     }
 
     return round($lateDays * LATE_FEE_PER_DAY, 2);
+}
+
+
+/* =========================================================================
+   NOTIFICATIONS — Fix #2
+   Every admin action sends a notification to the customer.
+   ========================================================================= */
+
+function notifyCustomer(
+    PDO $pdo,
+    int $rentalId,
+    int $customerId,
+    string $type,
+    string $title,
+    string $message
+): void {
+    try {
+        $stmt = $pdo->prepare("
+            INSERT INTO notifications
+                (recipient_role, recipient_id, rental_id, type, title, message)
+            VALUES
+                ('customer', :uid, :rental_id, :type, :title, :message)
+        ");
+        $stmt->execute([
+            ':uid'       => $customerId,
+            ':rental_id' => $rentalId,
+            ':type'      => $type,
+            ':title'     => $title,
+            ':message'   => $message
+        ]);
+    } catch (PDOException $e) {
+        error_log("notifyCustomer failed: " . $e->getMessage());
+    }
+}
+
+
+function notifyAdmin(
+    PDO $pdo,
+    ?int $rentalId,
+    string $type,
+    string $title,
+    string $message
+): void {
+    try {
+        $stmt = $pdo->prepare("
+            INSERT INTO notifications
+                (recipient_role, recipient_id, rental_id, type, title, message)
+            VALUES
+                ('admin', NULL, :rental_id, :type, :title, :message)
+        ");
+        $stmt->execute([
+            ':rental_id' => $rentalId,
+            ':type'      => $type,
+            ':title'     => $title,
+            ':message'   => $message
+        ]);
+    } catch (PDOException $e) {
+        error_log("notifyAdmin failed: " . $e->getMessage());
+    }
 }

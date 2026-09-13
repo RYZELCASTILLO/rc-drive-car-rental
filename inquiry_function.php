@@ -14,35 +14,27 @@ $message = trim($_POST['message'] ?? '');
 
 $userId = isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : null;
 
-/* =========================
-   VALIDATION
-========================= */
-
-if (
-    $name === '' ||
-    $email === '' ||
-    $message === ''
-) {
-    header(
-        "Location: index.php?status=error&message=" .
-        urlencode("Please complete all contact fields.")
-    );
+if ($name === '' || $email === '' || $message === '') {
+    header("Location: index.php?status=error&message=" .
+           urlencode("Please complete all contact fields."));
     exit;
 }
 
 if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-    header(
-        "Location: index.php?status=error&message=" .
-        urlencode("Please enter a valid email address.")
-    );
+    header("Location: index.php?status=error&message=" .
+           urlencode("Please enter a valid email address."));
     exit;
 }
 
 if (strlen($message) < 5) {
-    header(
-        "Location: index.php?status=error&message=" .
-        urlencode("Message is too short.")
-    );
+    header("Location: index.php?status=error&message=" .
+           urlencode("Message is too short."));
+    exit;
+}
+
+if (mb_strlen($message) > MAX_CHAT_MESSAGE_LENGTH) {
+    header("Location: index.php?status=error&message=" .
+           urlencode("Message is too long. Max " . MAX_CHAT_MESSAGE_LENGTH . " characters."));
     exit;
 }
 
@@ -66,7 +58,6 @@ try {
 
     $inquiryId = (int) $pdo->lastInsertId();
 
-    // Insert as first message in the conversation thread
     $msgStmt = $pdo->prepare("
         INSERT INTO inquiry_messages
         (inquiry_id, sender_role, sender_name, message)
@@ -80,20 +71,15 @@ try {
         ':message'     => $message
     ]);
 
-    header(
-        "Location: index.php?status=success&message=" .
-        urlencode("Your message has been sent successfully.")
-    );
+    header("Location: index.php?status=success&message=" .
+           urlencode("Your message has been sent successfully."));
     exit;
 
 } catch (PDOException $e) {
 
     error_log($e->getMessage());
 
-    header(
-        "Location: index.php?status=error&message=" .
-        urlencode("Unable to send your message.")
-    );
+    header("Location: index.php?status=error&message=" .
+           urlencode("Unable to send your message."));
     exit;
 }
-?>

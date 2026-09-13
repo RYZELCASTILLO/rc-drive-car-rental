@@ -21,6 +21,12 @@ if (!$inquiryId || $message === '') {
     exit;
 }
 
+if (mb_strlen($message) > MAX_CHAT_MESSAGE_LENGTH) {
+    header("Location: dashboard.php?status=error&message=" .
+           urlencode("Message is too long. Max " . MAX_CHAT_MESSAGE_LENGTH . " characters."));
+    exit;
+}
+
 $role     = $_SESSION['role'] ?? 'customer';
 $userId   = (int) $_SESSION['user_id'];
 $username = $_SESSION['username'] ?? 'User';
@@ -29,7 +35,6 @@ try {
 
     $pdo = getConnection();
 
-    // Fetch inquiry
     $stmt = $pdo->prepare("
         SELECT id, user_id, name, email
         FROM inquiries
@@ -44,9 +49,6 @@ try {
         exit;
     }
 
-    // Permission check
-    // Admin can reply to any inquiry.
-    // Customer can only reply to their own inquiry.
     if ($role !== 'admin') {
         if ((int)($inquiry['user_id'] ?? 0) !== $userId) {
             header("Location: dashboard.php?status=error&message=" . urlencode("You can only reply to your own inquiries."));
@@ -54,7 +56,6 @@ try {
         }
     }
 
-    // Insert message
     $insert = $pdo->prepare("
         INSERT INTO inquiry_messages
         (inquiry_id, sender_role, sender_name, message)
@@ -63,13 +64,12 @@ try {
     ");
 
     $insert->execute([
-        ':inquiry_id'    => $inquiryId,
-        ':sender_role'   => $role === 'admin' ? 'admin' : 'customer',
-        ':sender_name'   => $username,
-        ':message'       => $message
+        ':inquiry_id'  => $inquiryId,
+        ':sender_role' => $role === 'admin' ? 'admin' : 'customer',
+        ':sender_name' => $username,
+        ':message'     => $message
     ]);
 
-    // If admin replied, mirror reply into the legacy column for compatibility
     if ($role === 'admin') {
         $update = $pdo->prepare("
             UPDATE inquiries
@@ -93,4 +93,3 @@ try {
     header("Location: dashboard.php?status=error&message=" . urlencode("Unable to send reply."));
     exit;
 }
-?>

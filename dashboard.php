@@ -2,6 +2,8 @@
 session_start();
 require_once 'config.php';
 
+session_timeout_check();
+
 if (!isset($_SESSION['user_id'])) {
     header("Location: index.php?status=error&message=" . urlencode("Please login to access your dashboard."));
     exit;
@@ -11,6 +13,7 @@ $userRentals    = [];
 $adminRentals   = [];
 $inquiries      = [];
 $inquiryThreads = [];
+$notifications  = [];
 $brandStats     = [];
 $dbError        = '';
 
@@ -73,6 +76,35 @@ try {
 
     $pdo = getConnection();
     syncAllVehicleStock($pdo);
+
+    /* Notifications for current user */
+    try {
+        if ($role === 'admin') {
+            $nStmt = $pdo->query("
+                SELECT *
+                FROM notifications
+                WHERE recipient_role = 'admin'
+                  AND is_read = 0
+                ORDER BY created_at DESC
+                LIMIT 20
+            ");
+        } else {
+            $nStmt = $pdo->prepare("
+                SELECT *
+                FROM notifications
+                WHERE recipient_role = 'customer'
+                  AND recipient_id = :uid
+                  AND is_read = 0
+                ORDER BY created_at DESC
+                LIMIT 20
+            ");
+            $nStmt->execute([':uid' => $userId]);
+        }
+
+        $notifications = $nStmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (PDOException $e) {
+        $notifications = [];
+    }
 
     $vehicleRows = $pdo->query("
         SELECT id, vehicle_name, vehicle_brand, price_per_day, total_units, available_units
@@ -204,6 +236,8 @@ foreach ($userRentals as $r) {
         break;
     }
 }
+
+$unreadCount = count($notifications);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -216,319 +250,6 @@ foreach ($userRentals as $r) {
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800;900&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
-
-    <style>
-        body { background-color: #0b0c0e; color: #ffffff; }
-
-        .dash-wrapper { max-width: 1300px; margin: 0 auto; padding: 40px 6% 80px; }
-
-        .dash-header {
-            display: flex; justify-content: space-between; align-items: center;
-            padding: 20px 0 30px; border-bottom: 1px solid #222730;
-            margin-bottom: 40px; flex-wrap: wrap; gap: 20px;
-        }
-        .dash-logo img { height: 55px; width: auto; display: block; }
-        .dash-header-actions { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-
-        .dash-role-badge {
-            padding: 8px 16px; border-radius: 4px; font-size: 0.75rem;
-            font-weight: 900; letter-spacing: 1px; font-family: 'Montserrat', sans-serif;
-        }
-        .dash-role-admin    { background: #dc3545; color: #fff; }
-        .dash-role-customer { background: #FCC113; color: #212529; }
-
-        .dash-btn {
-            display: inline-flex; align-items: center; gap: 8px;
-            padding: 10px 20px; border-radius: 4px;
-            font-family: 'Montserrat', sans-serif; font-size: 0.85rem; font-weight: 800;
-            letter-spacing: 0.5px; text-decoration: none;
-            border: 2px solid transparent; cursor: pointer; transition: all 0.25s ease;
-        }
-        .dash-btn-yellow  { background:#FCC113; color:#212529; border-color:#FCC113; }
-        .dash-btn-yellow:hover { background:transparent; color:#FCC113; }
-        .dash-btn-outline { background:transparent; color:#fff; border-color:rgba(255,255,255,0.25); }
-        .dash-btn-outline:hover { border-color:#FCC113; color:#FCC113; }
-        .dash-btn-danger  { background:transparent; color:#ff5560; border-color:#ff5560; }
-        .dash-btn-danger:hover { background:#ff5560; color:#fff; }
-
-        .dash-page-title { margin-bottom: 30px; }
-        .dash-page-title h2 { font-size: 2rem; font-weight: 900; margin: 0 0 6px; }
-        .dash-page-title p  { color: #a0a5b1; font-size: 0.95rem; margin: 0; }
-
-        .dash-stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:20px; margin-bottom:45px; }
-        .dash-stat-card {
-            background:#1a1e24; border:1px solid #2a2f38; border-left:4px solid #FCC113;
-            border-radius:4px; padding:24px; transition:0.3s;
-        }
-        .dash-stat-card:hover { border-color:#FCC113; transform:translateY(-3px); }
-        .dash-stat-card .stat-label {
-            font-family:'Montserrat',sans-serif; font-size:0.75rem; font-weight:800;
-            letter-spacing:1px; color:#a0a5b1; text-transform:uppercase;
-            margin-bottom:8px; display:block;
-        }
-        .dash-stat-card .stat-value {
-            font-family:'Montserrat',sans-serif; font-size:2rem; font-weight:900;
-            color:#FCC113; line-height:1;
-        }
-        .dash-stat-card .stat-sub { font-size:0.8rem; color:#8a8f9d; margin-top:6px; display:block; }
-        .dash-stat-card.green { border-left-color:#28a745; } .dash-stat-card.green .stat-value { color:#28a745; }
-        .dash-stat-card.red   { border-left-color:#dc3545; } .dash-stat-card.red   .stat-value { color:#dc3545; }
-        .dash-stat-card.blue  { border-left-color:#0dcaf0; } .dash-stat-card.blue  .stat-value { color:#0dcaf0; }
-
-        .brand-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:20px; }
-        .brand-card { background:#1a1e24; border:1px solid #2a2f38; border-radius:4px; padding:24px; transition:0.3s; }
-        .brand-card:hover { border-color:#FCC113; }
-        .brand-card .brand-name {
-            font-family:'Montserrat',sans-serif; font-size:1.1rem; font-weight:900;
-            color:#FCC113; margin-bottom:4px;
-        }
-        .brand-card .brand-sub {
-            font-size:0.75rem; color:#8a8f9d; text-transform:uppercase;
-            letter-spacing:1px; margin-bottom:18px; display:block;
-        }
-        .brand-card .brand-row {
-            display:flex; justify-content:space-between; align-items:center;
-            padding:8px 0; border-bottom:1px solid #222730; font-size:0.9rem;
-        }
-        .brand-card .brand-row:last-child { border-bottom:none; }
-        .brand-card .brand-row span:first-child { color:#a0a5b1; font-weight:600; }
-        .brand-card .brand-row span:last-child {
-            font-family:'Montserrat',sans-serif; font-weight:900; color:#fff;
-        }
-        .brand-card .brand-row .available { color:#28a745; }
-        .brand-card .brand-row .rented    { color:#FCC113; }
-
-        .dash-section {
-            background:#161a20; border:1px solid #222730; border-radius:4px;
-            padding:30px; margin-bottom:30px;
-        }
-        .dash-section-title {
-            display:flex; justify-content:space-between; align-items:center;
-            margin-bottom:22px; padding-bottom:16px; border-bottom:1px solid #222730;
-            flex-wrap:wrap; gap:12px;
-        }
-        .dash-section-title h3 {
-            font-size:1.15rem; font-weight:800; margin:0; color:#fff;
-            display:flex; align-items:center; gap:10px;
-        }
-        .dash-section-title h3 i { color:#FCC113; }
-        .dash-section-title .title-note { font-size:0.8rem; color:#8a8f9d; }
-
-        .dash-table-wrap { overflow-x:auto; }
-        .dash-table { width:100%; border-collapse:collapse; font-size:0.9rem; }
-        .dash-table thead th {
-            text-align:left; font-family:'Montserrat',sans-serif; font-size:0.75rem;
-            font-weight:800; letter-spacing:1px; text-transform:uppercase;
-            color:#FCC113; padding:14px 12px; border-bottom:2px solid #2a2f38; white-space:nowrap;
-        }
-        .dash-table tbody td {
-            padding:16px 12px; border-bottom:1px solid #222730;
-            color:#d4d8dd; vertical-align:middle;
-        }
-        .dash-table tbody tr:hover { background:rgba(252,193,19,0.04); }
-        .dash-table .empty-row td {
-            text-align:center; color:#8a8f9d; padding:40px 12px; font-style:italic;
-        }
-        .dash-vehicle-name { color:#FCC113; font-weight:800; font-family:'Montserrat',sans-serif; }
-        .dash-money { color:#28a745; font-weight:800; font-family:'Montserrat',sans-serif; }
-
-        .dash-badge {
-            display:inline-block; padding:5px 12px; border-radius:3px;
-            font-family:'Montserrat',sans-serif; font-size:0.7rem; font-weight:900;
-            letter-spacing:0.5px; text-transform:uppercase;
-        }
-        .dash-badge-approved  { background:#28a745; color:#fff; }
-        .dash-badge-pending   { background:#FCC113; color:#212529; }
-        .dash-badge-rejected  { background:#dc3545; color:#fff; }
-        .dash-badge-pickedup  { background:#0dcaf0; color:#0b0c0e; }
-        .dash-badge-returned  { background:#17a2b8; color:#fff; }
-        .dash-badge-cancelreq { background:#fd7e14; color:#fff; }
-        .dash-badge-cancelled { background:#6c757d; color:#fff; }
-
-        .dash-action-btn {
-            display:inline-flex; align-items:center; justify-content:center;
-            width:34px; height:32px; border-radius:4px; font-size:0.8rem;
-            text-decoration:none; margin-right:6px; transition:0.2s;
-            border:none; cursor:pointer;
-        }
-        .dash-action-approve { background:#28a745; color:#fff; }
-        .dash-action-approve:hover { background:#1e7e34; }
-        .dash-action-reject  { background:#dc3545; color:#fff; }
-        .dash-action-reject:hover  { background:#b02a37; }
-        .dash-action-info    { background:#0dcaf0; color:#0b0c0e; }
-        .dash-action-info:hover    { background:#0aa2c0; }
-        .dash-action-warn    { background:#fd7e14; color:#fff; }
-        .dash-action-warn:hover    { background:#e06400; }
-        .dash-action-processed { font-size:0.8rem; color:#6c757d; font-style:italic; }
-
-        .dash-alert {
-            padding:16px 20px; border-radius:4px; margin-bottom:24px;
-            font-size:0.9rem; border-left:4px solid;
-            display:flex; align-items:center; gap:12px;
-        }
-        .dash-alert-success { background:rgba(40,167,69,0.1); border-color:#28a745; color:#7eec9a; }
-        .dash-alert-error   { background:rgba(220,53,69,0.1); border-color:#dc3545; color:#ff8590; }
-
-        .dash-empty { text-align:center; padding:60px 20px; color:#8a8f9d; }
-        .dash-empty i { font-size:3rem; color:#2a2f38; margin-bottom:18px; display:block; }
-        .dash-empty p { font-size:0.95rem; margin-bottom:22px; }
-
-        .conv-list { display:flex; flex-direction:column; gap:20px; }
-        .conv-item {
-            background:#12161c; border:1px solid #222730; border-left:4px solid #FCC113;
-            border-radius:4px; overflow:hidden; transition:0.3s;
-        }
-        .conv-item:hover { border-color:#FCC113; }
-        .conv-head {
-            display:flex; justify-content:space-between; align-items:center;
-            padding:18px 22px; cursor:pointer; gap:15px; flex-wrap:wrap;
-        }
-        .conv-head-info { display:flex; flex-direction:column; gap:4px; min-width:0; }
-        .conv-head-info strong {
-            color:#FCC113; font-family:'Montserrat',sans-serif;
-            font-size:0.95rem; font-weight:800;
-        }
-        .conv-head-info small { color:#8a8f9d; font-size:0.8rem; }
-        .conv-head-info .conv-preview {
-            color:#a0a5b1; font-size:0.85rem; margin-top:4px;
-            overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:500px;
-        }
-        .conv-head-meta { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
-        .conv-toggle {
-            background:transparent; border:1px solid #2a2f38; color:#FCC113;
-            border-radius:4px; padding:6px 12px; font-size:0.75rem; font-weight:800;
-            font-family:'Montserrat',sans-serif; letter-spacing:0.5px;
-            cursor:pointer; transition:0.25s;
-        }
-        .conv-toggle:hover { background:#FCC113; color:#212529; border-color:#FCC113; }
-
-        .conv-body { display:none; padding:0 22px 22px; border-top:1px solid #222730; }
-        .conv-body.open { display:block; }
-        .conv-thread {
-            max-height:380px; overflow-y:auto; padding:18px 0;
-            display:flex; flex-direction:column; gap:14px;
-        }
-        .conv-bubble {
-            max-width:75%; padding:12px 16px; border-radius:12px;
-            font-size:0.9rem; line-height:1.5; position:relative;
-        }
-        .conv-bubble .bubble-meta {
-            display:block; font-size:0.7rem; font-weight:800;
-            font-family:'Montserrat',sans-serif; letter-spacing:0.5px;
-            margin-bottom:6px; opacity:0.75;
-        }
-        .conv-bubble.customer {
-            align-self:flex-start; background:#1f2530; color:#fff; border-top-left-radius:4px;
-        }
-        .conv-bubble.customer .bubble-meta { color:#FCC113; }
-        .conv-bubble.admin {
-            align-self:flex-end; background:#FCC113; color:#212529; border-top-right-radius:4px;
-        }
-        .conv-bubble.admin .bubble-meta { color:#2b2500; }
-        .conv-reply-form {
-            display:flex; gap:10px; padding-top:18px;
-            border-top:1px solid #222730; margin-top:6px;
-        }
-        .conv-reply-form textarea {
-            flex:1; background:#0b0c0e; border:1px solid #2a2f38; border-radius:4px;
-            color:#fff; padding:12px 14px; font-size:0.9rem; font-family:inherit;
-            resize:vertical; min-height:50px; outline:none; transition:0.25s;
-        }
-        .conv-reply-form textarea:focus { border-color:#FCC113; }
-        .conv-send-btn {
-            background:#FCC113; color:#212529; border:2px solid #FCC113;
-            border-radius:4px; font-family:'Montserrat',sans-serif; font-weight:900;
-            font-size:0.8rem; letter-spacing:0.5px; padding:0 22px;
-            cursor:pointer; transition:0.25s;
-            display:inline-flex; align-items:center; gap:6px;
-        }
-        .conv-send-btn:hover { background:transparent; color:#FCC113; }
-        .conv-empty-thread {
-            padding:20px; text-align:center; color:#8a8f9d;
-            font-size:0.85rem; font-style:italic;
-        }
-
-        .cancel-policy-box {
-            border-radius:4px;
-            padding:14px 16px;
-            font-size:0.85rem;
-            line-height:1.6;
-            border-left:4px solid #fd7e14;
-            background:rgba(253,126,20,0.08);
-        }
-
-        .pickup-info-banner {
-            background: rgba(40,167,69,0.08);
-            border: 1px solid rgba(40,167,69,0.4);
-            border-left: 4px solid #28a745;
-            border-radius: 4px;
-            padding: 20px 24px;
-            margin-bottom: 24px;
-        }
-
-        .pickup-info-banner h4 {
-            font-family: 'Montserrat', sans-serif;
-            font-weight: 900;
-            color: #28a745;
-            font-size: 0.95rem;
-            letter-spacing: 1px;
-            text-transform: uppercase;
-            margin: 0 0 12px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .pickup-info-banner p {
-            color: #d4d8dd;
-            font-size: 0.9rem;
-            margin-bottom: 10px;
-            line-height: 1.6;
-        }
-
-        .pickup-info-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-            gap: 16px;
-            margin-top: 16px;
-        }
-
-        .pickup-info-grid .info-label {
-            font-family: 'Montserrat', sans-serif;
-            font-size: 0.7rem;
-            font-weight: 800;
-            color: #8a8f9d;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            margin-bottom: 4px;
-        }
-
-        .pickup-info-grid .info-value {
-            color: #ffffff;
-            font-size: 0.88rem;
-            line-height: 1.5;
-        }
-
-        .pickup-info-grid .info-value i {
-            color: #FCC113;
-            margin-right: 4px;
-        }
-
-        .dash-footer {
-            text-align:center; padding:30px 6%; color:#6c757d;
-            font-size:0.8rem; border-top:1px solid #222730; margin-top:40px;
-        }
-
-        @media (max-width:768px) {
-            .dash-header { flex-direction:column; align-items:flex-start; }
-            .dash-page-title h2 { font-size:1.5rem; }
-            .dash-section { padding:20px; }
-            .dash-table { font-size:0.8rem; }
-            .dash-table thead th, .dash-table tbody td { padding:10px 8px; }
-            .conv-reply-form { flex-direction:column; }
-            .conv-bubble { max-width:90%; }
-        }
-    </style>
 </head>
 <body>
 
@@ -574,6 +295,40 @@ foreach ($userRentals as $r) {
         </div>
     <?php endif; ?>
 
+    <!-- NOTIFICATIONS -->
+    <?php if ($unreadCount > 0): ?>
+
+        <div class="dash-notif-banner">
+
+            <div class="dash-notif-head">
+                <i class="fa-solid fa-bell"></i>
+                <strong>You have <?= $unreadCount ?> new notification<?= $unreadCount === 1 ? '' : 's' ?></strong>
+                <a href="mark_notifications_read.php" class="dash-notif-clear">
+                    <?= $role === 'admin' ? 'Mark all as read' : 'Dismiss' ?>
+                </a>
+            </div>
+
+            <ul class="dash-notif-list">
+                <?php foreach (array_slice($notifications, 0, 5) as $n): ?>
+                    <li class="dash-notif-item">
+                        <div class="dash-notif-title">
+                            <i class="fa-solid fa-circle-dot"></i>
+                            <?= htmlspecialchars($n['title']) ?>
+                        </div>
+                        <div class="dash-notif-msg">
+                            <?= nl2br(htmlspecialchars($n['message'] ?? '')) ?>
+                        </div>
+                        <div class="dash-notif-time">
+                            <?= htmlspecialchars($n['created_at']) ?>
+                        </div>
+                    </li>
+                <?php endforeach; ?>
+            </ul>
+
+        </div>
+
+    <?php endif; ?>
+
     <!-- PICKUP REMINDER FOR CUSTOMER -->
     <?php if ($role === 'customer' && $hasApprovedBooking): ?>
 
@@ -596,9 +351,8 @@ foreach ($userRentals as $r) {
                     <div class="info-label">Our Location</div>
                     <div class="info-value">
                         <i class="fa-solid fa-location-dot"></i>
-                        RC Drive Car Rental Services<br>
-                        123 Rizal Boulevard<br>
-                        Dumaguete City, Negros Oriental
+                        <?= htmlspecialchars(COMPANY_NAME) ?><br>
+                        <?= htmlspecialchars(COMPANY_ADDRESS) ?>
                     </div>
                 </div>
 
@@ -606,8 +360,7 @@ foreach ($userRentals as $r) {
                     <div class="info-label">Operating Hours</div>
                     <div class="info-value">
                         <i class="fa-solid fa-clock"></i>
-                        Monday – Sunday<br>
-                        7:00 AM – 9:00 PM
+                        <?= htmlspecialchars(COMPANY_HOURS) ?>
                     </div>
                 </div>
 
@@ -615,9 +368,9 @@ foreach ($userRentals as $r) {
                     <div class="info-label">Contact</div>
                     <div class="info-value">
                         <i class="fa-solid fa-phone"></i>
-                        +63 930 222 9696<br>
+                        <?= htmlspecialchars(COMPANY_PHONE) ?><br>
                         <i class="fa-solid fa-envelope"></i>
-                        support@rcdrive.com
+                        <?= htmlspecialchars(COMPANY_EMAIL) ?>
                     </div>
                 </div>
 
@@ -1015,7 +768,7 @@ foreach ($userRentals as $r) {
 
                         $createdTs    = isset($rental['created_at']) ? strtotime($rental['created_at']) : 0;
                         $hoursSince   = $createdTs > 0 ? (time() - $createdTs) / 3600 : 9999;
-                        $withinWindow = $hoursSince <= 2;
+                        $withinWindow = $hoursSince <= CANCEL_WINDOW_HOURS;
 
                         $canSelfCancel = ($status === 'Pending' && $withinWindow);
                         $showButton    = in_array($status, ['Pending', 'Approved'], true);
@@ -1201,12 +954,12 @@ foreach ($userRentals as $r) {
 </div>
 
 <footer class="dash-footer">
-    &copy; 2026 RC Drive Car Rental Services. All rights reserved.
+    &copy; 2026 <?= htmlspecialchars(COMPANY_NAME) ?>. All rights reserved.
 </footer>
 
 
 <!-- ============================================================
-     RETURN VEHICLE MODAL (admin only)
+     RETURN VEHICLE MODAL
      ============================================================ -->
 <div class="modal fade" id="returnVehicleModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">
@@ -1397,8 +1150,8 @@ foreach ($userRentals as $r) {
                             <div style="font-family:'Montserrat',sans-serif; font-size:0.7rem; font-weight:800; color:#8a8f9d; text-transform:uppercase; letter-spacing:1px; margin-bottom:2px;">
                                 Phone
                             </div>
-                            <a href="tel:+639302229696" style="color:#FCC113; font-weight:800; text-decoration:none; font-size:0.95rem;">
-                                +63 930 222 9696
+                            <a href="tel:<?= htmlspecialchars(COMPANY_PHONE) ?>" style="color:#FCC113; font-weight:800; text-decoration:none; font-size:0.95rem;">
+                                <?= htmlspecialchars(COMPANY_PHONE) ?>
                             </a>
                         </div>
                     </div>
@@ -1411,8 +1164,8 @@ foreach ($userRentals as $r) {
                             <div style="font-family:'Montserrat',sans-serif; font-size:0.7rem; font-weight:800; color:#8a8f9d; text-transform:uppercase; letter-spacing:1px; margin-bottom:2px;">
                                 Email
                             </div>
-                            <a href="mailto:support@rcdrive.com" style="color:#FCC113; font-weight:800; text-decoration:none; font-size:0.95rem;">
-                                support@rcdrive.com
+                            <a href="mailto:<?= htmlspecialchars(COMPANY_EMAIL) ?>" style="color:#FCC113; font-weight:800; text-decoration:none; font-size:0.95rem;">
+                                <?= htmlspecialchars(COMPANY_EMAIL) ?>
                             </a>
                         </div>
                     </div>
@@ -1437,9 +1190,9 @@ foreach ($userRentals as $r) {
 
                 <p style="color:#a0a5b1; font-size:0.82rem; margin-bottom:0; line-height:1.6;">
                     <i class="fa-solid fa-location-dot" style="color:#FCC113;"></i>
-                    Pickup at: <strong style="color:#fff;">123 Rizal Boulevard, Dumaguete City</strong><br>
+                    Pickup at: <strong style="color:#fff;"><?= htmlspecialchars(COMPANY_ADDRESS) ?></strong><br>
                     <i class="fa-solid fa-clock" style="color:#FCC113;"></i>
-                    Open daily: <strong style="color:#fff;">7:00 AM – 9:00 PM</strong>
+                    <?= htmlspecialchars(COMPANY_HOURS) ?>
                 </p>
 
             </div>

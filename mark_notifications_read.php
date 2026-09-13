@@ -3,8 +3,6 @@
 session_start();
 require_once "config.php";
 
-session_timeout_check();
-
 if (!isset($_SESSION['user_id'])) {
     header("Location: index.php?status=error&message=" . urlencode("Please login first."));
     exit;
@@ -19,6 +17,7 @@ try {
     $pdo = getConnection();
 
     if ($id) {
+        /* Mark a single notification as read */
         if ($role === 'admin') {
             $stmt = $pdo->prepare("
                 UPDATE notifications
@@ -38,6 +37,7 @@ try {
             $stmt->execute([':id' => $id, ':uid' => $uid]);
         }
     } else {
+        /* Mark ALL notifications for this user as read */
         if ($role === 'admin') {
             $pdo->exec("
                 UPDATE notifications

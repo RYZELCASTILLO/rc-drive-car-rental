@@ -3,6 +3,8 @@
 session_start();
 require_once "config.php";
 
+session_timeout_check();
+
 if (!isset($_SESSION['user_id'])) {
     header("Location: index.php?status=error&message=" . urlencode("Please login first."));
     exit;
@@ -43,7 +45,7 @@ try {
     $pdo = getConnection();
 
     $stmt = $pdo->prepare("
-        SELECT id, user_id, status, created_at, rental_date
+        SELECT id, user_id, status, created_at, rental_date, vehicle_type
         FROM rentals
         WHERE id = :id
         LIMIT 1
@@ -59,21 +61,17 @@ try {
     $status = $booking['status'] ?? 'Pending';
 
     if ($status !== 'Pending') {
-        header(
-            "Location: dashboard.php?status=error&message=" .
-            urlencode("This booking can no longer be self-cancelled because it has already been processed. Please chat with us if you still need to cancel.")
-        );
+        header("Location: dashboard.php?status=error&message=" .
+               urlencode("This booking can no longer be self-cancelled because it has already been processed. Please chat with us if you still need to cancel."));
         exit;
     }
 
     $createdTs  = strtotime($booking['created_at']);
     $hoursSince = (time() - $createdTs) / 3600;
 
-    if ($hoursSince > 2) {
-        header(
-            "Location: dashboard.php?status=error&message=" .
-            urlencode("The 2-hour self-cancellation window has passed. Please chat with us and an admin will assist you.")
-        );
+    if ($hoursSince > CANCEL_WINDOW_HOURS) {
+        header("Location: dashboard.php?status=error&message=" .
+               urlencode("The " . CANCEL_WINDOW_HOURS . "-hour self-cancellation window has passed. Please chat with us and an admin will assist you."));
         exit;
     }
 
@@ -90,6 +88,16 @@ try {
         ':other'  => ($reason === 'Other' ? $reasonOther : null),
         ':id'     => $id
     ]);
+
+    /* Notify admin */
+    notifyAdmin(
+        $pdo,
+        $id,
+        'cancel_requested',
+        "Cancellation request from customer",
+        "Booking #$id — {$booking['vehicle_type']}\n" .
+        "Reason: $reason" . ($reason === 'Other' ? " ($reasonOther)" : "")
+    );
 
     header("Location: dashboard.php?status=success&message=" . urlencode("Cancellation request submitted. Please wait for admin approval."));
     exit;

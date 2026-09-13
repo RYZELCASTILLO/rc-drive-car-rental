@@ -3,6 +3,8 @@
 session_start();
 require_once "config.php";
 
+session_timeout_check();
+
 if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'admin') {
     header("Location: index.php?status=error&message=" . urlencode("Admin access required."));
     exit;
@@ -33,7 +35,7 @@ try {
     $pdo = getConnection();
 
     $stmt = $pdo->prepare("
-        SELECT id, status, vehicle_id, return_date, total_fee
+        SELECT id, status, vehicle_id, user_id, vehicle_type, return_date, total_fee
         FROM rentals
         WHERE id = :id
         LIMIT 1
@@ -51,7 +53,6 @@ try {
         exit;
     }
 
-    // Compute late days
     $agreedReturn = new DateTime($booking['return_date']);
     $actualReturn = new DateTime($actualReturnDate);
 
@@ -60,10 +61,11 @@ try {
         $lateDays = $agreedReturn->diff($actualReturn)->days;
     }
 
-    // Flat ₱1,000 per day
-    $lateFee  = calculateLateFee($lateDays);
-    $newTotal = (float)$booking['total_fee'] + $lateFee;
+    $lateFee   = calculateLateFee($lateDays);
+    $newTotal  = (float)$booking['total_fee'] + $lateFee;
     $vehicleId = (int)$booking['vehicle_id'];
+    $customerId = (int)($booking['user_id'] ?? 0);
+    $vehicleName = $booking['vehicle_type'] ?? 'vehicle';
 
     $upd = $pdo->prepare("
         UPDATE rentals
@@ -86,11 +88,31 @@ try {
 
     if ($lateDays > 0) {
         $message = "Vehicle returned. Late by $lateDays day(s). Late fee: ₱" .
-                   number_format($lateFee, 2) . " (₱" .
-                   number_format(LATE_FEE_PER_DAY, 2) . "/day). " .
-                   "New total: ₱" . number_format($newTotal, 2);
+                   number_format($lateFee, 2) . ". New total: ₱" . number_format($newTotal, 2);
+
+        if ($customerId) {
+            notifyCustomer(
+                $pdo, $id, $customerId,
+                'booking_returned_late',
+                'Vehicle returned — late fee applied',
+                "Your $vehicleName was returned $lateDays day(s) late.\n" .
+                "Late fee: ₱" . number_format($lateFee, 2) . " (₱" .
+                number_format(LATE_FEE_PER_DAY, 0) . "/day).\n" .
+                "New total: ₱" . number_format($newTotal, 2) . ".\n\n" .
+                "Thank you for choosing RC Drive."
+            );
+        }
     } else {
         $message = "Vehicle returned on time. No late fee.";
+
+        if ($customerId) {
+            notifyCustomer(
+                $pdo, $id, $customerId,
+                'booking_returned',
+                'Vehicle returned on time',
+                "Your $vehicleName was returned on time. Thank you for choosing RC Drive!"
+            );
+        }
     }
 
     header("Location: dashboard.php?status=success&message=" . urlencode($message));
